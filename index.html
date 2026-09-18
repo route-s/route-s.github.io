@@ -10,7 +10,7 @@
 
   <style>
     * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #121212; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #191a1a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 
     #app-container {
       width: 100%;
@@ -32,6 +32,11 @@
       height: 100%;
       position: absolute;
       top: 0; left: 0;
+    }
+
+    /* OSM 기본 타일을 API 키 없는 고대비 다크모드로 반전 */
+    .maplibregl-canvas-container {
+      background-color: #1a1a1a;
     }
 
     #filter-container {
@@ -125,7 +130,7 @@
       width: 100%;
     }
 
-    /* 제비꼬리 마커 */
+    /* 제비꼬리 화살표 마커 */
     .arrow-marker {
       width: 32px;
       height: 32px;
@@ -137,7 +142,7 @@
     .arrow-marker svg {
       width: 26px;
       height: 26px;
-      filter: drop-shadow(0 0 5px rgba(255, 71, 87, 0.95)) drop-shadow(0 0 2px #000);
+      filter: drop-shadow(0 0 6px rgba(255, 71, 87, 0.95)) drop-shadow(0 0 2px #000);
       transform-origin: 50% 50%;
     }
 
@@ -213,7 +218,7 @@
     });
   }
 
-  // 줌 레벨 19까지 깨짐 없는 고해상도 다크 타일맵(CartoDB Dark Matter) 적용
+  // 순수 공식 OSM 타일 + 다크 래스터 튜닝 (API 키 불필요, 줌 19까지 무제한)
   const map = new maplibregl.Map({
     container: 'map',
     scrollZoom: true,
@@ -224,20 +229,31 @@
     style: {
       version: 8,
       sources: {
-        'carto-dark': {
+        'osm-tiles': {
           type: 'raster',
           tiles: [
-            'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-            'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-            'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-            'https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'
+            'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'
           ],
           tileSize: 256,
-          attribution: '&copy; <a href="https://carto.com/">CARTO</a>'
+          attribution: '&copy; OpenStreetMap contributors'
         }
       },
       layers: [
-        { id: 'carto-dark-layer', type: 'raster', source: 'carto-dark', minzoom: 0, maxzoom: 19 }
+        { 
+          id: 'osm-tiles-layer', 
+          type: 'raster', 
+          source: 'osm-tiles', 
+          minzoom: 0, 
+          maxzoom: 19,
+          paint: {
+            'raster-brightness-max': 0.35,
+            'raster-brightness-min': 0.05,
+            'raster-contrast': 0.25,
+            'raster-saturation': -1.0
+          }
+        }
       ]
     },
     center: [126.9780, 37.5665],
@@ -273,7 +289,6 @@
     return null;
   }
 
-  // 실시간 마커 위치 및 방향 회전 계산
   function updateMarkerPosition(currentLen, totalLen, safeLine) {
     if (!safeLine || totalLen <= 0) return;
     try {
@@ -362,6 +377,7 @@
           data: rawGeojsonData
         });
 
+        // 어두운 OSM 배경 위에서 형광 민트색 라인이 선명하게 보이도록 두께 및 발광 설정
         map.addLayer({
           id: 'routes-line',
           type: 'line',
@@ -369,8 +385,8 @@
           layout: { 'line-join': 'round', 'line-cap': 'round' },
           paint: {
             'line-color': '#00ffff',
-            'line-width': 2.8,
-            'line-opacity': 0.85
+            'line-width': 3.2,
+            'line-opacity': 0.95
           }
         });
 
@@ -396,7 +412,6 @@
       hoverPopup.remove();
     });
 
-    // 코스 클릭 이벤트
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       const props = activeLine.properties || {};
@@ -421,7 +436,7 @@
       const snapped = turf.nearestPointOnLine(safeLine, turf.point(clickedLngLat));
       const exactPos = snapped.geometry.coordinates;
 
-      // 1. 클릭 즉시 마커를 [0, 0]이 아닌 클릭한 선분 지점에 고정
+      // 마커를 클릭한 위치로 즉시 정확하게 고정
       trackingMarker.setLngLat(exactPos).addTo(map);
 
       const totalLen = turf.length(safeLine, { units: 'kilometers' });
@@ -431,7 +446,6 @@
 
       pendingSeekRatio = totalLen > 0 ? (curLen / totalLen) : 0;
 
-      // 2. 초기 진행 방향 회전각 계산
       try {
         const delta = Math.min(0.02, (totalLen - curLen) / 2);
         const lookAhead = turf.along(safeLine, Math.min(totalLen, curLen + delta), { units: 'kilometers' });
@@ -439,7 +453,6 @@
         arrowSvg.style.transform = `rotate(${initBearing}deg)`;
       } catch(err) {}
 
-      // 3. 유튜브 영상 로드
       if (currentVideoId !== videoId) {
         currentVideoId = videoId;
         if (player && typeof player.loadVideoById === 'function') {
