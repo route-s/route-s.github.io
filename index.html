@@ -125,9 +125,10 @@
       width: 100%;
     }
 
+    /* 제비꼬리 화살표 마커 */
     .arrow-marker {
-      width: 30px;
-      height: 30px;
+      width: 32px;
+      height: 32px;
       pointer-events: none;
       display: flex;
       align-items: center;
@@ -192,22 +193,25 @@
   let rawGeojsonData = null;
   let adminHierarchy = {};
   let isSplitMode = false;
+  let currentVideoId = null;
   let pendingSeekRatio = null;
 
   function onYouTubeIframeAPIReady() {
     player = new YT.Player('yt-player', {
       height: '100%',
       width: '100%',
-      playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0 },
+      playerVars: { 
+        'autoplay': 1, 
+        'controls': 1, 
+        'rel': 0,
+        'enablejsapi': 1,
+        'origin': window.location.origin 
+      },
       events: {
-        'onReady': onPlayerReady,
+        'onReady': () => { applyPendingSeek(); },
         'onStateChange': onPlayerStateChange
       }
     });
-  }
-
-  function onPlayerReady(event) {
-    applyPendingSeek();
   }
 
   const map = new maplibregl.Map({
@@ -258,9 +262,15 @@
     return match ? match[1] : null;
   }
 
+  // 좌표가 깨진 라인도 안전하게 유효한 단일 LineString으로 변환
   function getSafeLine(feature) {
-    if (feature.geometry.type === 'LineString') return feature;
-    return turf.lineString(turf.coordAll(feature), feature.properties);
+    try {
+      const coords = turf.coordAll(feature);
+      if (coords && coords.length >= 2) {
+        return turf.lineString(coords, feature.properties);
+      }
+    } catch(e) {}
+    return null;
   }
 
   function updateMarkerPosition(currentLen, totalLen, safeLine) {
@@ -277,8 +287,11 @@
         bearing = turf.bearing(currentPos, lookAheadPos);
       }
 
-      trackingMarker.setLngLat(currentPos.geometry.coordinates);
-      arrowSvg.style.transform = `rotate(${bearing}deg)`;
+      const coord = currentPos.geometry.coordinates;
+      if (coord && !isNaN(coord[0]) && !isNaN(coord[1])) {
+        trackingMarker.setLngLat(coord);
+        arrowSvg.style.transform = `rotate(${bearing}deg)`;
+      }
     } catch(e) {}
   }
 
@@ -287,20 +300,18 @@
     try {
       const lineBbox = turf.bbox(activeLine);
       if (isSplitMode) {
-        map.fitBounds(lineBbox, { padding: 60, maxZoom: 15.5, duration: 600 });
+        map.fitBounds(lineBbox, { padding: 50, maxZoom: 15.5, duration: 600 });
       } else {
         map.fitBounds(lineBbox, { padding: { top: 60, bottom: 60, left: 60, right: 410 }, maxZoom: 15.5, duration: 600 });
       }
     } catch(err) {}
   }
 
-  // 분할 모드 토글: CSS 전환 후 map.resize() 및 타일 강제 재렌더링
   function toggleSplitMode() {
     isSplitMode = !isSplitMode;
     document.body.classList.toggle('split-mode', isSplitMode);
     document.getElementById('split-btn').innerText = isSplitMode ? '❐' : '◫';
 
-    // 레이아웃 변경 즉시 + 애니메이션 완료 시점(250ms) 2단계로 확실하게 뷰포트 재계산
     map.resize();
     setTimeout(() => {
       map.resize();
@@ -311,11 +322,13 @@
 
   function applyPendingSeek() {
     if (pendingSeekRatio === null || !player) return;
-    const dur = player.getDuration();
-    if (dur && dur > 0) {
-      player.seekTo(dur * pendingSeekRatio, true);
-      pendingSeekRatio = null;
-    }
+    try {
+      const dur = player.getDuration();
+      if (dur && dur > 0) {
+        player.seekTo(dur * pendingSeekRatio, true);
+        pendingSeekRatio = null;
+      }
+    } catch(e) {}
   }
 
   map.on('load', () => {
@@ -399,19 +412,33 @@
       zoomToActiveLine();
 
       const safeLine = getSafeLine(activeLine);
+      if (!safeLine) return;
+
       const clickedCoords = [e.lngLat.lng, e.lngLat.lat];
       const snapped = turf.nearestPointOnLine(safeLine, turf.point(clickedCoords));
       const totalLen = turf.length(safeLine, { units: 'kilometers' });
-      const startPt = turf.point(safeLine.geometry.coordinates[0]);
+
+      const startCoord = safeLine.geometry.coordinates[0];
+      const startPt = turf.point(startCoord);
       const sliced = turf.lineSlice(startPt, snapped, safeLine);
       const curLen = turf.length(sliced, { units: 'kilometers' });
 
       pendingSeekRatio = totalLen > 0 ? (curLen / totalLen) : 0;
 
-      if (player && typeof player.loadVideoById === 'function') {
-        player.loadVideoById(videoId);
+      // 유튜브 영상 교체 (API 로드 여부와 관계없이 무조건 재생되는 완벽 처리)
+      if (currentVideoId !== videoId) {
+        currentVideoId = videoId;
+        if (player && typeof player.loadVideoById === 'function') {
+          player.loadVideoById({ videoId: videoId, startSeconds: (player.getDuration() || 0) * pendingSeekRatio });
+        } else {
+          document.getElementById('player-container').innerHTML = 
+            `<iframe id="yt-player" src="https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+        }
+      } else {
+        applyPendingSeek();
       }
 
+      // 제비꼬리 마커를 클릭한 위치로 즉시 정확하게 배치
       trackingMarker.addTo(map);
       updateMarkerPosition(curLen, totalLen, safeLine);
     });
@@ -432,6 +459,7 @@
         if (!dur || dur === 0) return;
 
         const safeLine = getSafeLine(activeLine);
+        if (!safeLine) return;
         const totalLen = turf.length(safeLine, { units: 'kilometers' });
         const targetLen = totalLen * (curTime / dur);
 
@@ -447,6 +475,7 @@
     clearInterval(syncTimer);
     trackingMarker.remove();
     pendingSeekRatio = null;
+    currentVideoId = null;
   }
 
   const countrySelect = document.getElementById('country-select');
