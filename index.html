@@ -150,7 +150,7 @@
       width: 100%;
     }
 
-    /* 시작점 마커 스타일 (초록색) */
+    /* 초록색 시작점 마커 스타일 */
     .start-marker {
       width: 22px;
       height: 22px;
@@ -158,15 +158,6 @@
       border: 3px solid #ffffff;
       border-radius: 50%;
       box-shadow: 0 0 10px rgba(46, 213, 115, 0.8);
-    }
-    /* 종료점 마커 스타일 (주황-빨간색) */
-    .end-marker {
-      width: 22px;
-      height: 22px;
-      background: #ff4757;
-      border: 3px solid #ffffff;
-      border-radius: 50%;
-      box-shadow: 0 0 10px rgba(255, 71, 87, 0.8);
     }
 
     .maplibregl-popup-content {
@@ -217,7 +208,6 @@
   let activeLineId = null;
   let hoveredLineId = null;
   let startMarker = null;
-  let endMarker = null;
   let rawGeojsonData = null;
   let adminHierarchy = {};
   let isSplitMode = false;
@@ -342,13 +332,10 @@
 
   map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
 
+  // 초록색 시작점 마커만 생성
   const startEl = document.createElement('div');
   startEl.className = 'start-marker';
   startMarker = new maplibregl.Marker({ element: startEl, anchor: 'center' });
-
-  const endEl = document.createElement('div');
-  endEl.className = 'end-marker';
-  endMarker = new maplibregl.Marker({ element: endEl, anchor: 'center' });
 
   function extractYouTubeId(url) {
     if (!url) return null;
@@ -357,24 +344,16 @@
     return match ? match[1] : null;
   }
 
-  /* ================= [최종 보정] 선분 전체 거리 기반 완벽한 0% / 100% 끝단 추출 ================= */
-  function getTrueLineEnds(feature) {
-    try {
-      const totalLen = turf.length(feature, { units: 'kilometers' });
-      const startPoint = turf.along(feature, 0, { units: 'kilometers' });
-      const endPoint = turf.along(feature, totalLen, { units: 'kilometers' });
-
-      return {
-        start: startPoint.geometry.coordinates,
-        end: endPoint.geometry.coordinates
-      };
-    } catch (e) {
-      const raw = turf.coordAll(feature);
-      return {
-        start: raw[0] || [0, 0],
-        end: raw[raw.length - 1] || [0, 0]
-      };
+  function getCleanedCoords(feature) {
+    const raw = turf.coordAll(feature);
+    const cleaned = [];
+    for (let i = 0; i < raw.length; i++) {
+      const p = raw[i];
+      if (p && !isNaN(p[0]) && !isNaN(p[1])) {
+        cleaned.push([p[0], p[1]]);
+      }
     }
+    return cleaned;
   }
 
   function zoomToActiveLine() {
@@ -591,7 +570,7 @@
       hoverPopup.remove();
     });
 
-    // 경로 클릭 시: 0% 지점과 100% 지점을 수학적으로 확정하여 마커 표시
+    // 경로 클릭 시: 초록색 시작점 마커만 해당 선분의 첫 좌표에 표시
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
@@ -613,10 +592,11 @@
 
       zoomToActiveLine();
 
-      // 총 길이 기반 0%와 100% 지점 추출
-      const ends = getTrueLineEnds(activeLine);
-      startMarker.setLngLat(ends.start).addTo(map);
-      endMarker.setLngLat(ends.end).addTo(map);
+      // 시작점(첫 번째 좌표)에만 초록색 마커 표시
+      const coords = getCleanedCoords(activeLine);
+      if (coords.length > 0) {
+        startMarker.setLngLat(coords[0]).addTo(map);
+      }
 
       if (currentVideoId !== videoId) {
         currentVideoId = videoId;
@@ -640,7 +620,6 @@
     if (isSplitMode) toggleSplitMode();
     if (player && typeof player.stopVideo === 'function') player.stopVideo();
     startMarker.remove();
-    endMarker.remove();
     currentVideoId = null;
     updateActiveRouteHighlight(null);
     updateHoverHighlight(null);
