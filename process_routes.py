@@ -6,7 +6,7 @@ routes = gpd.read_file('routes.geojson')
 if routes.crs is None:
     routes.set_crs(epsg=4326, inplace=True)
 
-# 전국 시군구 경계
+# 전국 시군구 경계 (통계청/행안부 5자리 정규 코드)
 kor_url = "https://raw.githubusercontent.com/southkorea/southkorea-maps/master/kostat/2018/json/skorea-municipalities-2018-geo.json"
 kor_gdf = gpd.read_file(kor_url).to_crs(epsg=4326)
 
@@ -21,11 +21,36 @@ KOR_SIDO_CODE_MAP = {
     "35": "전북특별자치도", "36": "전라남도", "37": "경상북도", "38": "경상남도", "39": "제주특별자치도"
 }
 
+# 주요 국가 영문 -> 한글 번역 사전 (남아공, 동남아, 유럽, 미주 포괄)
 COUNTRY_MAP = {
-    "Japan": "일본", "Taiwan": "대만", "United States": "미국", "United States of America": "미국",
-    "Vietnam": "베트남", "China": "중국", "Thailand": "태국", "Singapore": "싱가포르",
-    "Hong Kong": "홍콩", "United Kingdom": "영국", "France": "프랑스", "Germany": "독일",
-    "Italy": "이탈리아", "Canada": "캐나다", "Australia": "호주"
+    "South Africa": "남아프리카공화국",
+    "Singapore": "싱가포르",
+    "Japan": "일본",
+    "Taiwan": "대만",
+    "United States": "미국",
+    "United States of America": "미국",
+    "Vietnam": "베트남",
+    "China": "중국",
+    "Thailand": "태국",
+    "Hong Kong": "홍콩",
+    "Macau": "마카오",
+    "United Kingdom": "영국",
+    "France": "프랑스",
+    "Germany": "독일",
+    "Italy": "이탈리아",
+    "Spain": "스페인",
+    "Canada": "캐나다",
+    "Australia": "호주",
+    "New Zealand": "뉴질랜드",
+    "Philippines": "필리핀",
+    "Malaysia": "말레이시아",
+    "Indonesia": "인도네시아",
+    "Turkey": "튀르키예",
+    "Egypt": "이집트",
+    "United Arab Emirates": "아랍에미리트",
+    "Mexico": "멕시코",
+    "Brazil": "브라질",
+    "Argentina": "아르헨티나"
 }
 
 kor_gdf['sido_name'] = kor_gdf['code'].str[:2].map(KOR_SIDO_CODE_MAP).fillna("기타시도")
@@ -49,16 +74,24 @@ for idx, row in routes.iterrows():
     
     # 1. 대한민국 외 영역
     if not (124.0 <= lng <= 132.0 and 33.0 <= lat <= 38.9):
-        if 122.5 <= lng <= 154.0 and 24.0 <= lat <= 46.0:
+        # [보정 1] 싱가포르 바운딩 박스 (소축척 폴리곤의 말레이시아 병합 오차 방지)
+        if 103.6 <= lng <= 104.1 and 1.15 <= lat <= 1.5:
+            routes.at[idx, 'country'] = "싱가포르"
+        # [보정 2] 일본 전역 및 오키나와 군도
+        elif 122.5 <= lng <= 154.0 and 24.0 <= lat <= 46.0:
             routes.at[idx, 'country'] = "일본"
+        # [보정 3] 홍콩 / 마카오 미세 영역
+        elif 113.8 <= lng <= 114.4 and 22.1 <= lat <= 22.6:
+            routes.at[idx, 'country'] = "홍콩"
         else:
             c_name = "해외"
             for _, w_row in world_gdf.iterrows():
                 if w_row.geometry.contains(first_pt):
-                    raw_c = w_row.get('name') or w_row.get('ADMIN') or "해외"
+                    raw_c = w_row.get('name') or w_row.get('ADMIN') or w_row.get('SOV_A3') or "해외"
                     c_name = COUNTRY_MAP.get(raw_c, raw_c)
                     break
             routes.at[idx, 'country'] = c_name
+            
         routes.at[idx, 'sido'] = "-"
         routes.at[idx, 'sigungu'] = "-"
     else:
@@ -67,7 +100,7 @@ for idx, row in routes.iterrows():
         sidos = grouped.loc[idx, 'sido_name'] if idx in grouped.index else []
         sigs = grouped.loc[idx, 'name_right'] if idx in grouped.index else []
         
-        # 해안선 완충 (제주항 등)
+        # 해안선/제주항 등 외곽 완충
         if not sidos:
             if 33.1 <= lat <= 33.6 and 126.1 <= lng <= 127.0:
                 sidos = ["제주특별자치도"]
