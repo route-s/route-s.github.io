@@ -10,24 +10,31 @@
 
   <style>
     * { box-sizing: border-box; }
-    body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 
     #app-container {
-      position: absolute;
-      top: 0; left: 0; width: 100%; height: 100%;
+      width: 100%;
+      height: 100%;
       display: flex;
       flex-direction: column;
+      position: relative;
     }
 
+    /* 1. 지도 영역: Flex 구조로 분할 화면 시 자연스럽게 축소 */
+    #map-wrapper {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
     #map {
       width: 100%;
       height: 100%;
       position: absolute;
       top: 0; left: 0;
-      transition: height 0.3s ease, top 0.3s ease;
-      cursor: default;
     }
 
+    /* 행정구역 3단 필터 바 */
     #filter-container {
       position: absolute;
       top: 15px;
@@ -58,6 +65,7 @@
       cursor: not-allowed;
     }
 
+    /* 유튜브 플레이어 패널 (기본: 우측 상단 플로팅) */
     #player-panel {
       position: absolute;
       top: 15px;
@@ -74,7 +82,6 @@
       z-index: 100;
       backdrop-filter: blur(10px);
       border: 1px solid rgba(255,255,255,0.12);
-      transition: all 0.3s ease;
     }
     #player-container { width: 100%; height: 215px; background: #000; position: relative; }
     #player-container iframe { width: 100%; height: 100%; border: none; }
@@ -93,6 +100,11 @@
     #close-btn { right: 8px; font-size: 16px; }
     #split-btn { right: 42px; font-size: 13px; }
 
+    /* 2. 상하 분할 모드: 화면을 Flex 50:50으로 명확하게 나눔 */
+    body.split-mode #app-container {
+      display: flex;
+      flex-direction: column;
+    }
     body.split-mode #player-panel {
       position: relative;
       top: 0; left: 0; right: 0;
@@ -107,38 +119,29 @@
     }
     body.split-mode #player-container {
       flex: 1;
-      height: calc(100% - 55px);
+      height: calc(100% - 50px);
     }
-    body.split-mode #map {
-      top: 50vh;
+    body.split-mode #map-wrapper {
+      flex: none;
       height: 50vh;
-    }
-    body.split-mode #filter-container {
-      top: calc(50vh + 15px);
+      width: 100%;
     }
 
-    /* 제비꼬리 화살표 마커 (중심 정렬 보정) */
+    /* 3. 제비꼬리 화살표 마커 (MapLibre 표준 앵커 구조) */
     .arrow-marker {
-      width: 28px;
-      height: 28px;
+      width: 30px;
+      height: 30px;
       pointer-events: none;
       display: flex;
-      justify-content: center;
       align-items: center;
+      justify-content: center;
+      position: relative;
     }
-    .arrow-marker-inner {
-      width: 100%;
-      height: 100%;
+    .arrow-marker svg {
+      width: 26px;
+      height: 26px;
+      filter: drop-shadow(0 0 5px rgba(255, 71, 87, 0.95)) drop-shadow(0 0 2px #000);
       transform-origin: 50% 50%;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      transition: transform 0.2s linear;
-    }
-    .arrow-marker-inner svg {
-      width: 24px;
-      height: 24px;
-      filter: drop-shadow(0 0 6px rgba(255, 71, 87, 0.95)) drop-shadow(0 0 2px #000);
     }
 
     .maplibregl-popup-content {
@@ -155,6 +158,7 @@
 <body>
 
 <div id="app-container">
+  <!-- 플레이어 패널 -->
   <div id="player-panel">
     <button id="split-btn" class="panel-btn" onclick="toggleSplitMode()" title="화면 상하 분할 / 팝업 토글">◫</button>
     <button id="close-btn" class="panel-btn" onclick="closePlayer()" title="닫기">×</button>
@@ -165,19 +169,22 @@
     </div>
   </div>
 
-  <div id="filter-container">
-    <select id="country-select" class="filter-select">
-      <option value="ALL">1단계: 국가 전체</option>
-    </select>
-    <select id="sido-select" class="filter-select" disabled>
-      <option value="ALL">2단계: 시·도 전체</option>
-    </select>
-    <select id="sigungu-select" class="filter-select" disabled>
-      <option value="ALL">3단계: 시·군·구 전체</option>
-    </select>
+  <!-- 지도 래퍼 -->
+  <div id="map-wrapper">
+    <!-- 행정구역 3단 필터 바 -->
+    <div id="filter-container">
+      <select id="country-select" class="filter-select">
+        <option value="ALL">1단계: 국가 전체</option>
+      </select>
+      <select id="sido-select" class="filter-select" disabled>
+        <option value="ALL">2단계: 시·도 전체</option>
+      </select>
+      <select id="sigungu-select" class="filter-select" disabled>
+        <option value="ALL">3단계: 시·군·구 전체</option>
+      </select>
+    </div>
+    <div id="map"></div>
   </div>
-
-  <div id="map"></div>
 </div>
 
 <script src="https://www.youtube.com/iframe_api"></script>
@@ -186,22 +193,30 @@
   let player = null;
   let activeLine = null;
   let trackingMarker = null;
-  let arrowInnerEl = null;
+  let arrowSvg = null;
   let syncTimer = null;
   let rawGeojsonData = null;
   let adminHierarchy = {};
   let isSplitMode = false;
+  let pendingSeekRatio = null; // 클릭 지점 영상 탐색 비율 저장 변수
 
   function onYouTubeIframeAPIReady() {
     player = new YT.Player('yt-player', {
       height: '100%',
       width: '100%',
       playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0 },
-      events: { 'onStateChange': onPlayerStateChange }
+      events: {
+        'onReady': onPlayerReady,
+        'onStateChange': onPlayerStateChange
+      }
     });
   }
 
-  // 지도 인스턴스 (스크롤 줌, 드래그 줌 및 컨트롤 강제 활성화)
+  function onPlayerReady(event) {
+    // 준비 완료 시 보류된 탐색 지점이 있다면 이동
+    applyPendingSeek();
+  }
+
   const map = new maplibregl.Map({
     container: 'map',
     scrollZoom: true,
@@ -231,23 +246,19 @@
     zoom: 11
   });
 
-  // 줌/회전 컨트롤 버튼 추가
   map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
 
-  // 제비꼬리 화살표 마커 생성 (중심축 고정)
-  const markerWrapper = document.createElement('div');
-  markerWrapper.className = 'arrow-marker';
-  arrowInnerEl = document.createElement('div');
-  arrowInnerEl.className = 'arrow-marker-inner';
-  arrowInnerEl.innerHTML = `
+  // 제비꼬리 마커 DOM 생성 (MapLibre 정규 앵커 방식)
+  const markerEl = document.createElement('div');
+  markerEl.className = 'arrow-marker';
+  markerEl.innerHTML = `
     <svg viewBox="0 0 24 24" fill="none">
       <path d="M12 2L21 21L12 16.5L3 21L12 2Z" fill="#ff4757" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
     </svg>
   `;
-  markerWrapper.appendChild(arrowInnerEl);
-  trackingMarker = new maplibregl.Marker({ element: markerWrapper, anchor: 'center' });
+  arrowSvg = markerEl.querySelector('svg');
+  trackingMarker = new maplibregl.Marker({ element: markerEl, anchor: 'center' });
 
-  // 유튜브 비디오 ID 만능 추출 정규식
   function extractYouTubeId(url) {
     if (!url) return null;
     const regExp = /(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/;
@@ -275,7 +286,7 @@
       }
 
       trackingMarker.setLngLat(currentPos.geometry.coordinates);
-      arrowInnerEl.style.transform = `rotate(${bearing}deg)`;
+      arrowSvg.style.transform = `rotate(${bearing}deg)`;
     } catch(e) {}
   }
 
@@ -284,9 +295,9 @@
     try {
       const lineBbox = turf.bbox(activeLine);
       if (isSplitMode) {
-        map.fitBounds(lineBbox, { padding: { top: 60, bottom: 60, left: 60, right: 60 }, maxZoom: 15.5, duration: 900 });
+        map.fitBounds(lineBbox, { padding: 50, maxZoom: 15.5, duration: 800 });
       } else {
-        map.fitBounds(lineBbox, { padding: { top: 70, bottom: 70, left: 70, right: 420 }, maxZoom: 15.5, duration: 900 });
+        map.fitBounds(lineBbox, { padding: { top: 60, bottom: 60, left: 60, right: 410 }, maxZoom: 15.5, duration: 800 });
       }
     } catch(err) {}
   }
@@ -296,10 +307,22 @@
     document.body.classList.toggle('split-mode', isSplitMode);
     document.getElementById('split-btn').innerText = isSplitMode ? '❐' : '◫';
 
+    // 화면 레이아웃 변경 즉시 및 전환 후 2회 강제 리사이즈 (지도 사라짐 방지)
+    map.resize();
     setTimeout(() => {
       map.resize();
       zoomToActiveLine();
-    }, 320);
+    }, 200);
+  }
+
+  // 유튜브 영상이 로드되어 재생 시간이 잡히면 원하는 구간으로 이동
+  function applyPendingSeek() {
+    if (pendingSeekRatio === null || !player) return;
+    const dur = player.getDuration();
+    if (dur && dur > 0) {
+      player.seekTo(dur * pendingSeekRatio, true);
+      pendingSeekRatio = null;
+    }
   }
 
   map.on('load', () => {
@@ -365,6 +388,7 @@
       hoverPopup.remove();
     });
 
+    // 경로 클릭 시 영상 로드 및 클릭 위치 동기화
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       const props = activeLine.properties || {};
@@ -382,38 +406,37 @@
 
       zoomToActiveLine();
 
+      // 클릭 지점 비율 정밀 계산
+      const safeLine = getSafeLine(activeLine);
+      const clickedCoords = [e.lngLat.lng, e.lngLat.lat];
+      const snapped = turf.nearestPointOnLine(safeLine, turf.point(clickedCoords));
+      const totalLen = turf.length(safeLine, { units: 'kilometers' });
+      const startPt = turf.point(safeLine.geometry.coordinates[0]);
+      const sliced = turf.lineSlice(startPt, snapped, safeLine);
+      const curLen = turf.length(sliced, { units: 'kilometers' });
+
+      // 클릭 비율 저장 (0 ~ 1)
+      pendingSeekRatio = totalLen > 0 ? (curLen / totalLen) : 0;
+
+      // 영상 로드
       if (player && typeof player.loadVideoById === 'function') {
         player.loadVideoById(videoId);
-      } else {
-        document.getElementById('player-container').innerHTML = 
-          `<iframe id="yt-player" src="https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
       }
 
-      try {
-        const safeLine = getSafeLine(activeLine);
-        const clickedCoords = [e.lngLat.lng, e.lngLat.lat];
-        const snapped = turf.nearestPointOnLine(safeLine, turf.point(clickedCoords));
-        const totalLen = turf.length(safeLine, { units: 'kilometers' });
-
-        const startPt = turf.point(safeLine.geometry.coordinates[0]);
-        const sliced = turf.lineSlice(startPt, snapped, safeLine);
-        const curLen = turf.length(sliced, { units: 'kilometers' });
-
-        setTimeout(() => {
-          if (player && typeof player.getDuration === 'function') {
-            const dur = player.getDuration() || 0;
-            if (dur > 0 && totalLen > 0) player.seekTo((curLen / totalLen) * dur, true);
-          }
-        }, 700);
-
-        trackingMarker.addTo(map);
-        updateMarkerPosition(curLen, totalLen, safeLine);
-      } catch(err) {}
+      // 제비꼬리 마커를 클릭한 위치로 즉시 이동
+      trackingMarker.addTo(map);
+      updateMarkerPosition(curLen, totalLen, safeLine);
     });
   });
 
   function onPlayerStateChange(event) {
     clearInterval(syncTimer);
+
+    // 영상 재생이 시작되거나 버퍼링될 때 보류된 시간 점프 실행
+    if (event.data === YT.PlayerState.PLAYING || event.data === YT.PlayerState.BUFFERING) {
+      applyPendingSeek();
+    }
+
     if (event.data === YT.PlayerState.PLAYING && activeLine) {
       syncTimer = setInterval(() => {
         if (!player || typeof player.getCurrentTime !== 'function') return;
@@ -426,7 +449,7 @@
         const targetLen = totalLen * (curTime / dur);
 
         updateMarkerPosition(targetLen, totalLen, safeLine);
-      }, 500);
+      }, 300);
     }
   }
 
@@ -436,6 +459,7 @@
     if (player && typeof player.stopVideo === 'function') player.stopVideo();
     clearInterval(syncTimer);
     trackingMarker.remove();
+    pendingSeekRatio = null;
   }
 
   const countrySelect = document.getElementById('country-select');
