@@ -38,7 +38,6 @@
       background-color: #1a1a1a;
     }
 
-    /* 3단 드롭다운 필터 컨테이너 */
     #filter-container {
       position: absolute;
       top: 15px;
@@ -74,7 +73,6 @@
       cursor: not-allowed;
     }
 
-    /* 스마트폰 반응형 */
     @media (max-width: 640px) {
       #filter-container {
         top: 10px;
@@ -126,7 +124,6 @@
     #close-btn { right: 8px; font-size: 16px; }
     #split-btn { right: 42px; font-size: 13px; }
 
-    /* 상하 분할 모드 */
     body.split-mode #app-container {
       display: flex;
       flex-direction: column;
@@ -153,7 +150,6 @@
       width: 100%;
     }
 
-    /* 제비꼬리 화살표 마커 */
     .arrow-marker {
       width: 32px;
       height: 32px;
@@ -224,7 +220,6 @@
   let pendingSeekRatio = null;
   let seekCheckInterval = null;
 
-  /* ================= 한영 표기 매핑 사전 ================= */
   const COUNTRY_EN_MAP = {
     "대한민국": "Korea", "일본": "Japan", "싱가포르": "Singapore",
     "남아프리카공화국": "RSA", "대만": "Taiwan", "미국": "USA"
@@ -358,78 +353,130 @@
     return match ? match[1] : null;
   }
 
-  /* ================= 노드 순서 자동 연속 재정렬 엔진 ================= */
-  function reorderCoordsContinuous(rawCoords) {
-    if (!rawCoords || rawCoords.length <= 2) return rawCoords;
-
-    const remaining = [];
-    for (let i = 0; i < rawCoords.length; i++) {
-      const pt = rawCoords[i];
-      if (pt && !isNaN(pt[0]) && !isNaN(pt[1])) {
-        if (remaining.length === 0 || remaining[remaining.length - 1][0] !== pt[0] || remaining[remaining.length - 1][1] !== pt[1]) {
-          remaining.push(pt);
+  // 선분의 기존 점 연결 순서를 100% 보존하는 정규화
+  function getNaturalOrderedCoords(feature) {
+    const coords = turf.coordAll(feature);
+    const cleaned = [];
+    for (let i = 0; i < coords.length; i++) {
+      const p = coords[i];
+      if (p && !isNaN(p[0]) && !isNaN(p[1])) {
+        if (cleaned.length === 0 || cleaned[cleaned.length - 1][0] !== p[0] || cleaned[cleaned.length - 1][1] !== p[1]) {
+          cleaned.push(p);
         }
       }
     }
+    return cleaned;
+  }
 
-    if (remaining.length <= 2) return remaining;
+  // 두 위경도 사이의 Haversine 거리 (단위: km)
+  function calcDistKm(c1, c2) {
+    const R = 6371;
+    const dLat = (c2[1] - c1[1]) * Math.PI / 180;
+    const dLon = (c2[0] - c1[0]) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(c1[1] * Math.PI / 180) * Math.cos(c2[1] * Math.PI / 180) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  }
 
-    const ordered = [remaining.shift()];
+  /* ================= [핵심] 배열 순서 그대로 누적 거리 및 클릭 위치 비율 연산 ================= */
+  function findSequentialPosition(coords, clickLngLat) {
+    if (!coords || coords.length < 2) return { ratio: 0, snappedCoord: clickLngLat, bearing: 0 };
 
-    while (remaining.length > 0) {
-      const current = ordered[ordered.length - 1];
-      let nearestIdx = 0;
-      let minDistanceSq = Infinity;
-
-      for (let i = 0; i < remaining.length; i++) {
-        const dx = remaining[i][0] - current[0];
-        const dy = remaining[i][1] - current[1];
-        const distSq = dx * dx + dy * dy;
-
-        if (distSq < minDistanceSq) {
-          minDistanceSq = distSq;
-          nearestIdx = i;
-        }
-      }
-
-      ordered.push(remaining.splice(nearestIdx, 1)[0]);
+    let totalLength = 0;
+    const segLengths = [];
+    for (let i = 0; i < coords.length - 1; i++) {
+      const d = calcDistKm(coords[i], coords[i+1]);
+      segLengths.push(d);
+      totalLength += d;
     }
 
-    return ordered;
+    if (totalLength === 0) return { ratio: 0, snappedCoord: coords[0], bearing: 0 };
+
+    // 클릭 지점과 가장 가까운 선분 조각(Segment)을 찾음
+    let minDistanceToSegment = Infinity;
+    let bestSegIdx = 0;
+    let bestSegT = 0;
+    let bestSnappedCoord = coords[0];
+
+    const px = clickLngLat[0];
+    const py = clickLngLat[1];
+
+    for (let i = 0; i < coords.length - 1; i++) {
+      const p1 = coords[i];
+      const p2 = coords[i+1];
+
+      const dx = p2[0] - p1[0];
+      const dy = p2[1] - p1[1];
+      const lenSq = dx * dx + dy * dy;
+
+      let t = 0;
+      if (lenSq > 0) {
+        t = ((px - p1[0]) * dx + (py - p1[1]) * dy) / lenSq;
+        t = Math.max(0, Math.min(1, t)); // 선분 내부로 제한
+      }
+
+      const snapX = p1[0] + t * dx;
+      const snapY = p1[1] + t * dy;
+      const distToClick = calcDistKm(clickLngLat, [snapX, snapY]);
+
+      if (distToClick < minDistanceToSegment) {
+        minDistanceToSegment = distToClick;
+        bestSegIdx = i;
+        bestSegT = t;
+        bestSnappedCoord = [snapX, snapY];
+      }
+    }
+
+    // 0번 점부터 해당 세그먼트 직전까지 순수 누적 합산 + 세그먼트 내부 거리
+    let accumulatedDist = 0;
+    for (let i = 0; i < bestSegIdx; i++) {
+      accumulatedDist += segLengths[i];
+    }
+    accumulatedDist += segLengths[bestSegIdx] * bestSegT;
+
+    const finalRatio = Math.max(0, Math.min(1, accumulatedDist / totalLength));
+
+    // 진행 방향 베어링 계산
+    const bearing = turf.bearing(turf.point(coords[bestSegIdx]), turf.point(coords[bestSegIdx + 1]));
+
+    return {
+      ratio: finalRatio,
+      snappedCoord: bestSnappedCoord,
+      bearing: bearing,
+      totalLength: totalLength
+    };
   }
 
-  function getSafeLine(feature) {
-    try {
-      const allCoords = turf.coordAll(feature);
-      if (allCoords && allCoords.length >= 2) {
-        const sortedCoords = reorderCoordsContinuous(allCoords);
-        return turf.lineString(sortedCoords, feature.properties);
-      }
-    } catch(e) {}
-    return null;
-  }
+  // 비율(0~1)에 해당하는 위치와 방향을 순차 배열 기반으로 도출
+  function getCoordAlongSequence(coords, ratio) {
+    if (!coords || coords.length < 2) return null;
+    let totalLength = 0;
+    const segLengths = [];
+    for (let i = 0; i < coords.length - 1; i++) {
+      const d = calcDistKm(coords[i], coords[i+1]);
+      segLengths.push(d);
+      totalLength += d;
+    }
+    if (totalLength === 0) return { coord: coords[0], bearing: 0 };
 
-  function updateMarkerPosition(currentLen, totalLen, safeLine) {
-    if (!safeLine || totalLen <= 0) return;
-    try {
-      let clampedLen = Math.max(0.0001, Math.min(currentLen, totalLen));
-      const currentPos = turf.along(safeLine, clampedLen, { units: 'kilometers' });
-      
-      const delta = Math.min(0.02, (totalLen - clampedLen) / 2);
-      let targetLen = Math.min(totalLen, clampedLen + delta);
-      const lookAheadPos = turf.along(safeLine, targetLen, { units: 'kilometers' });
-      
-      let bearing = 0;
-      if (clampedLen < totalLen) {
-        bearing = turf.bearing(currentPos, lookAheadPos);
-      }
+    const targetDist = totalLength * Math.max(0, Math.min(1, ratio));
+    let currentDist = 0;
 
-      const coord = currentPos.geometry.coordinates;
-      if (coord && !isNaN(coord[0]) && !isNaN(coord[1]) && (coord[0] !== 0 || coord[1] !== 0)) {
-        trackingMarker.setLngLat(coord);
-        arrowSvg.style.transform = `rotate(${bearing}deg)`;
+    for (let i = 0; i < coords.length - 1; i++) {
+      const d = segLengths[i];
+      if (currentDist + d >= targetDist || i === coords.length - 2) {
+        const remaining = targetDist - currentDist;
+        const t = d > 0 ? Math.max(0, Math.min(1, remaining / d)) : 0;
+        const p1 = coords[i];
+        const p2 = coords[i+1];
+        const coord = [p1[0] + t * (p2[0] - p1[0]), p1[1] + t * (p2[1] - p1[1])];
+        const bearing = turf.bearing(turf.point(p1), turf.point(p2));
+        return { coord, bearing };
       }
-    } catch(e) {}
+      currentDist += d;
+    }
+    return { coord: coords[coords.length - 1], bearing: 0 };
   }
 
   function zoomToActiveLine() {
@@ -461,7 +508,6 @@
     }, 250);
   }
 
-  /* 영상 시간 준비 완료 시 클릭 지점으로 정확히 점프시키는 핵심 함수 */
   function scheduleSeek(targetRatio) {
     if (targetRatio === null || targetRatio === undefined) return;
     pendingSeekRatio = targetRatio;
@@ -481,7 +527,6 @@
         pendingSeekRatio = null;
       }
 
-      // 최대 10초(100회) 시도 후 중단
       if (attempts > 100) {
         clearInterval(seekCheckInterval);
       }
@@ -615,7 +660,7 @@
       hoverPopup.remove();
     });
 
-    // 코스 클릭 이벤트
+    // 코스 클릭 이벤트: 배열 순서 그대로의 누적 거리를 계산하여 영상 시간 완벽 동기화
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       const props = activeLine.properties || {};
@@ -633,31 +678,15 @@
 
       zoomToActiveLine();
 
-      const safeLine = getSafeLine(activeLine);
-      if (!safeLine) return;
-
+      const orderedCoords = getNaturalOrderedCoords(activeLine);
       const clickedLngLat = [e.lngLat.lng, e.lngLat.lat];
-      const snapped = turf.nearestPointOnLine(safeLine, turf.point(clickedLngLat));
-      const exactPos = snapped.geometry.coordinates;
 
-      trackingMarker.setLngLat(exactPos).addTo(map);
+      // 선분의 점 배열 순서 그대로 누적 거리와 정확한 클릭 지점 비율 도출
+      const pos = findSequentialPosition(orderedCoords, clickedLngLat);
 
-      const totalLen = turf.length(safeLine, { units: 'kilometers' });
-      const startPt = turf.point(safeLine.geometry.coordinates[0]);
-      const sliced = turf.lineSlice(startPt, snapped, safeLine);
-      const curLen = turf.length(sliced, { units: 'kilometers' });
+      trackingMarker.setLngLat(pos.snappedCoord).addTo(map);
+      arrowSvg.style.transform = `rotate(${pos.bearing}deg)`;
 
-      // 클릭한 위치의 거리 비율 (0 ~ 1)
-      const ratio = totalLen > 0 ? (curLen / totalLen) : 0;
-
-      try {
-        const delta = Math.min(0.02, (totalLen - curLen) / 2);
-        const lookAhead = turf.along(safeLine, Math.min(totalLen, curLen + delta), { units: 'kilometers' });
-        const initBearing = turf.bearing(snapped, lookAhead);
-        arrowSvg.style.transform = `rotate(${initBearing}deg)`;
-      } catch(err) {}
-
-      // 영상 로드 및 원하는 시간대로 점프 스케줄링
       if (currentVideoId !== videoId) {
         currentVideoId = videoId;
         if (player && typeof player.loadVideoById === 'function') {
@@ -668,15 +697,13 @@
         }
       }
 
-      // getDuration이 준비되는 즉시 정확한 초로 점프하도록 예약
-      scheduleSeek(ratio);
+      scheduleSeek(pos.ratio);
     });
   });
 
   function onPlayerStateChange(event) {
     clearInterval(syncTimer);
 
-    // 재생이 시작될 때 아직 대기 중인 탐색 지점이 있다면 재시도
     if (event.data === YT.PlayerState.PLAYING && pendingSeekRatio !== null) {
       scheduleSeek(pendingSeekRatio);
     }
@@ -688,12 +715,14 @@
         const dur = player.getDuration();
         if (!dur || dur === 0) return;
 
-        const safeLine = getSafeLine(activeLine);
-        if (!safeLine) return;
-        const totalLen = turf.length(safeLine, { units: 'kilometers' });
-        const targetLen = totalLen * (curTime / dur);
+        const orderedCoords = getNaturalOrderedCoords(activeLine);
+        const progress = curTime / dur;
+        const currentLoc = getCoordAlongSequence(orderedCoords, progress);
 
-        updateMarkerPosition(targetLen, totalLen, safeLine);
+        if (currentLoc) {
+          trackingMarker.setLngLat(currentLoc.coord);
+          arrowSvg.style.transform = `rotate(${currentLoc.bearing}deg)`;
+        }
       }, 300);
     }
   }
@@ -790,7 +819,6 @@
       map.setFilter('routes-line', ['in', ['id'], ['literal', matchedIds]]);
     }
 
-    /* 단계별 행정경계 표출 */
     if (map.getLayer('boundary-country-line')) {
       if (c === 'ALL') {
         map.setLayoutProperty('boundary-country-line', 'visibility', 'visible');
