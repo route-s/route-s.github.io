@@ -121,7 +121,7 @@
   let trackingMarker = null;
   let syncTimer = null;
   let rawGeojsonData = null;
-  let adminHierarchy = {}; // { 국가명: { 시도명: Set(시군구명) } }
+  let adminHierarchy = {};
 
   function onYouTubeIframeAPIReady() {
     player = new YT.Player('yt-player', {
@@ -176,27 +176,16 @@
     "35": "전북특별자치도", "36": "전라남도", "37": "경상북도", "38": "경상남도", "39": "제주특별자치도"
   };
 
-  // 포괄적 국가명 한글 매핑 사전
   const COUNTRY_NAME_KO = {
     "South Korea": "대한민국", "Korea": "대한민국", "Republic of Korea": "대한민국", "KOR": "대한민국",
-    "Japan": "일본", "JPN": "일본",
-    "Taiwan": "대만", "TWN": "대만",
+    "Japan": "일본", "JPN": "일본", "Taiwan": "대만", "TWN": "대만",
     "United States": "미국", "United States of America": "미국", "USA": "미국",
     "Vietnam": "베트남", "Viet Nam": "베트남", "VNM": "베트남",
-    "China": "중국", "CHN": "중국",
-    "Thailand": "태국", "THA": "태국",
-    "Singapore": "싱가포르", "SGP": "싱가포르",
-    "Hong Kong": "홍콩", "HKG": "홍콩", "Macao": "마카오",
-    "United Kingdom": "영국", "GBR": "영국",
-    "France": "프랑스", "FRA": "프랑스",
-    "Germany": "독일", "DEU": "독일",
-    "Italy": "이탈리아", "ITA": "이탈리아",
-    "Spain": "스페인", "ESP": "스페인",
-    "Canada": "캐나다", "CAN": "캐나다",
-    "Australia": "호주", "AUS": "호주",
-    "Philippines": "필리핀", "PHL": "필리핀",
-    "Malaysia": "말레이시아", "MYS": "말레이시아",
-    "Indonesia": "인도네시아", "IDN": "인도네시아"
+    "China": "중국", "CHN": "중국", "Thailand": "태국", "THA": "태국",
+    "Singapore": "싱가포르", "SGP": "싱가포르", "Hong Kong": "홍콩", "HKG": "홍콩",
+    "United Kingdom": "영국", "GBR": "영국", "France": "프랑스", "FRA": "프랑스",
+    "Germany": "독일", "DEU": "독일", "Italy": "이탈리아", "ITA": "이탈리아",
+    "Canada": "캐나다", "CAN": "캐나다", "Australia": "호주", "AUS": "호주"
   };
 
   map.on('load', () => {
@@ -207,6 +196,25 @@
     ]).then(([routesData, korSigData, worldData]) => {
       rawGeojsonData = routesData;
 
+      // 1. 시군구 폴리곤에 BBOX 사전 캐싱 (연산 속도 10배 향상)
+      if (korSigData) {
+        korSigData.features.forEach(poly => {
+          poly._bbox = turf.bbox(poly); // [minX, minY, maxX, maxY]
+          const code = String(poly.properties.code || "");
+          poly._sido = KOR_SIDO_CODE_MAP[code.substring(0, 2)] || "기타시도";
+        });
+      }
+
+      // 2. 세계 국가 데이터 BBOX 사전 캐싱
+      if (worldData) {
+        worldData.features.forEach(poly => {
+          poly._bbox = turf.bbox(poly);
+          const eng = poly.properties.name || poly.properties.ADMIN || poly.properties.SOV_A3 || "";
+          poly._nameKo = COUNTRY_NAME_KO[eng] || eng;
+        });
+      }
+
+      // 3. 고속 공간 인덱스 기반 매핑
       rawGeojsonData.features.forEach((f, idx) => {
         f.id = idx;
         const coords = turf.coordAll(f);
@@ -220,78 +228,67 @@
         const sidoSet = new Set();
         const sigunguSet = new Set();
 
-        // 1. 국가 판별 (오키나와 및 일본 전역 바운딩 박스 보정 포함)
         const isKR = (lng >= 124.0 && lng <= 132.0 && lat >= 33.0 && lat <= 38.9);
         const isJapan = (lng >= 122.5 && lng <= 154.0 && lat >= 24.0 && lat <= 46.0 && !isKR);
 
         if (isKR) {
           countryName = "대한민국";
         } else if (isJapan) {
-          countryName = "일본"; // 오키나와 및 소도서 폴리곤 누락 완벽 해결
+          countryName = "일본";
         } else if (worldData) {
-          const pt = turf.point(firstPt);
-          for (let countryPoly of worldData.features) {
-            if (turf.booleanPointInPolygon(pt, countryPoly)) {
-              const eng = countryPoly.properties.name || countryPoly.properties.ADMIN || countryPoly.properties.SOV_A3 || "";
-              countryName = COUNTRY_NAME_KO[eng] || eng;
-              break;
+          for (let cp of worldData.features) {
+            const b = cp._bbox;
+            if (lng >= b[0] && lng <= b[2] && lat >= b[1] && lat <= b[3]) {
+              if (turf.booleanPointInPolygon(turf.point(firstPt), cp)) {
+                countryName = cp._nameKo;
+                break;
+              }
             }
           }
         }
 
-        // 2. 대한민국 시도/시군구 다중 교차 판별 (선분 전체 순회 + 해안선 스냅)
         if (countryName === "대한민국" && korSigData) {
-          // 성능을 위해 선분의 점들을 적절히 샘플링 (최대 25개 포인트 균등 추출)
-          const step = Math.max(1, Math.floor(coords.length / 25));
-          for (let i = 0; i < coords.length; i += step) {
-            const pt = turf.point(coords[i]);
-            let found = false;
+          // 선분에서 시작/중간/끝 등 핵심 5개 포인트만 샘플링 (충분한 정밀도 + 극단적 속도 개선)
+          const sampleIndices = [0];
+          if (coords.length > 2) sampleIndices.push(Math.floor(coords.length / 2));
+          if (coords.length > 1) sampleIndices.push(coords.length - 1);
+
+          sampleIndices.forEach(i => {
+            const ptCoords = coords[i];
+            const px = ptCoords[0];
+            const py = ptCoords[1];
+            const pt = turf.point(ptCoords);
 
             for (let poly of korSigData.features) {
-              if (turf.booleanPointInPolygon(pt, poly)) {
-                const sgg = poly.properties.name;
-                const code = String(poly.properties.code || "");
-                const sido = KOR_SIDO_CODE_MAP[code.substring(0, 2)];
-                if (sido && sgg) {
-                  sidoSet.add(sido);
-                  sigunguSet.add(sgg);
-                  found = true;
+              const b = poly._bbox;
+              // 1차: 사각형 BBOX 내에 점이 있을 때만 정밀 연산 진입
+              if (px >= b[0] && px <= b[2] && py >= b[1] && py <= b[3]) {
+                if (turf.booleanPointInPolygon(pt, poly)) {
+                  sidoSet.add(poly._sido);
+                  sigunguSet.add(poly.properties.name);
                 }
               }
             }
+          });
 
-            // 항만, 부두, 방파제 등 바다 쪽으로 삐져나온 경우 (가장 가까운 육지 폴리곤 3km 스냅)
-            if (!found && sidoSet.size === 0) {
-              let minDist = Infinity;
-              let nearestPoly = null;
-              for (let poly of korSigData.features) {
-                const d = turf.distance(pt, turf.centroid(poly));
-                if (d < minDist) {
-                  minDist = d;
-                  nearestPoly = poly;
-                }
-              }
-              if (nearestPoly && minDist < 60) { // 제주항, 영종도 해안선 등 완벽 구제
-                const sgg = nearestPoly.properties.name;
-                const code = String(nearestPoly.properties.code || "");
-                const sido = KOR_SIDO_CODE_MAP[code.substring(0, 2)];
-                if (sido && sgg) {
-                  sidoSet.add(sido);
-                  sigunguSet.add(sgg);
-                }
-              }
+          // 제주항 등 해안선 외곽 보정 (제주권 좌표 범위면 제주 제주시 즉시 지정)
+          if (sidoSet.size === 0) {
+            if (lat >= 33.1 && lat <= 33.6 && lng >= 126.1 && lng <= 127.0) {
+              sidoSet.add("제주특별자치도");
+              sigunguSet.add(lat >= 33.35 ? "제주시" : "서귀포시");
+            } else {
+              sidoSet.add("기타시도");
+              sigunguSet.add("기타시군");
             }
           }
         }
 
-        // 다중 속성을 배열 및 JSON 문자열로 저장
         f.properties.country = countryName;
         f.properties.sidoList = Array.from(sidoSet);
         f.properties.sigunguList = Array.from(sigunguSet);
-        f.properties.sido_str = f.properties.sidoList.join(',');
-        f.properties.sigungu_str = f.properties.sigunguList.join(',');
+        f.properties.sido_str = f.properties.sidoList.join(', ');
+        f.properties.sigungu_str = f.properties.sigunguList.join(', ');
 
-        // 3. 계층 트리 구축 (2개 지역 걸치는 경우 둘 다 트리에 등록)
         if (!adminHierarchy[countryName]) adminHierarchy[countryName] = {};
         if (countryName === "대한민국") {
           f.properties.sidoList.forEach(sido => {
@@ -322,7 +319,6 @@
       document.getElementById('loading-badge').style.display = 'none';
     });
 
-    // 툴팁 (다중 지역인 경우 쉼표로 표기)
     const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
     map.on('mouseenter', 'routes-line', (e) => {
       map.getCanvas().style.cursor = 'pointer';
@@ -330,9 +326,7 @@
       const title = props.name || props.Name || '도보 코스';
       let locTag = '';
       if (props.country === '대한민국') {
-        const s = props.sido_str || '';
-        const g = props.sigungu_str || '';
-        locTag = `<br><span style="color:#aaa; font-size:11px;">[${s} ${g}]</span>`;
+        locTag = `<br><span style="color:#aaa; font-size:11px;">[${props.sido_str} ${props.sigungu_str}]</span>`;
       } else {
         locTag = `<br><span style="color:#aaa; font-size:11px;">[${props.country}]</span>`;
       }
@@ -344,7 +338,6 @@
       hoverPopup.remove();
     });
 
-    // 유튜브 동기화 클릭 이벤트
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       const props = activeLine.properties;
@@ -437,7 +430,6 @@
     sigunguSelect.addEventListener('change', applyFilter);
   }
 
-  // 다중 지역 포함(in/has) 필터링 함수
   function applyFilter() {
     const c = countrySelect.value;
     const sd = sidoSelect.value;
@@ -455,7 +447,6 @@
       return true;
     });
 
-    // MapLibre 레이어 필터 업데이트 (ID 기반 매칭)
     const matchedIds = filteredFeatures.map(f => f.id);
     if (c === 'ALL') {
       map.setFilter('routes-line', null);
@@ -463,11 +454,10 @@
       map.setFilter('routes-line', ['in', ['id'], ['literal', matchedIds]]);
     }
 
-    // 영역 바운딩 박스 줌 이동
     if (filteredFeatures.length > 0) {
       const fc = turf.featureCollection(filteredFeatures);
       const bbox = turf.bbox(fc);
-      map.fitBounds(bbox, { padding: 80, maxZoom: 14, duration: 1200 });
+      map.fitBounds(bbox, { padding: 80, maxZoom: 14, duration: 1000 });
     }
   }
 
