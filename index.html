@@ -219,10 +219,9 @@
   let adminHierarchy = {};
   let isSplitMode = false;
   let currentVideoId = null;
-  let targetSeekRatio = null;
+  let targetRatioToSeek = null;
   let seekPoller = null;
 
-  /* 서울특별시 25개 자치구 화이트리스트 (타 시·도 혼입 차단) */
   const SEOUL_DISTRICTS = new Set([
     "종로구", "중구", "용산구", "성동구", "광진구", "동대문구", "중랑구", "성북구",
     "강북구", "도봉구", "노원구", "은평구", "서대문구", "마포구", "양천구", "강서구",
@@ -362,120 +361,62 @@
     return match ? match[1] : null;
   }
 
-  function calcDistKm(c1, c2) {
-    const R = 6371;
-    const dLat = (c2[1] - c1[1]) * Math.PI / 180;
-    const dLon = (c2[0] - c1[0]) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(c1[1] * Math.PI / 180) * Math.cos(c2[1] * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  /* ================= [원론적 해결] 전체 선 벡터 길이 기준 등분(Linear Arc-Length Proportion) ================= */
+  function getLinearPosition(lineFeature, clickLngLat) {
+    try {
+      const clickPoint = turf.point(clickLngLat);
+      // 선분 벡터 상에서 가장 가까운 위치 스냅
+      const snapped = turf.nearestPointOnLine(lineFeature, clickPoint);
+      
+      // 선 전체의 누적 총 길이 (Vector Arc Length)
+      const totalLen = turf.length(lineFeature, { units: 'kilometers' });
+      if (totalLen === 0) return { ratio: 0, snappedCoord: clickLngLat, bearing: 0 };
+
+      // 선분의 시작점으로부터 스냅된 지점까지의 누적 길이
+      const startCoord = lineFeature.geometry.coordinates[0];
+      const slice = turf.lineSlice(turf.point(startCoord), snapped, lineFeature);
+      const sliceLen = turf.length(slice, { units: 'kilometers' });
+
+      // 전체 길이 대비 비율 (0.0 ~ 1.0) 선형 등분
+      const ratio = Math.max(0, Math.min(1, sliceLen / totalLen));
+
+      // 진행 방향 베어링 계산
+      const delta = Math.min(0.01, (totalLen - sliceLen) / 2);
+      const targetLen = Math.min(totalLen, sliceLen + delta);
+      const lookAhead = turf.along(lineFeature, targetLen, { units: 'kilometers' });
+      const bearing = turf.bearing(snapped, lookAhead);
+
+      return {
+        ratio: ratio,
+        snappedCoord: snapped.geometry.coordinates,
+        bearing: bearing
+      };
+    } catch (e) {
+      return { ratio: 0, snappedCoord: clickLngLat, bearing: 0 };
+    }
   }
 
-  function getCleanedCoords(feature) {
-    const raw = turf.coordAll(feature);
-    const cleaned = [];
-    for (let i = 0; i < raw.length; i++) {
-      const p = raw[i];
-      if (p && !isNaN(p[0]) && !isNaN(p[1])) {
-        cleaned.push([p[0], p[1]]);
-      }
+  function getCoordAlongLinear(lineFeature, ratio) {
+    try {
+      const totalLen = turf.length(lineFeature, { units: 'kilometers' });
+      if (totalLen === 0) return { coord: lineFeature.geometry.coordinates[0], bearing: 0 };
+
+      const targetDist = totalLen * Math.max(0, Math.min(1, ratio));
+      const currentPos = turf.along(lineFeature, targetDist, { units: 'kilometers' });
+      
+      const delta = Math.min(0.01, (totalLen - targetDist) / 2);
+      const lookAheadDist = Math.min(totalLen, targetDist + delta);
+      const lookAheadPos = turf.along(lineFeature, lookAheadDist, { units: 'kilometers' });
+      
+      const bearing = turf.bearing(currentPos, lookAheadPos);
+
+      return {
+        coord: currentPos.geometry.coordinates,
+        bearing: bearing
+      };
+    } catch (e) {
+      return { coord: lineFeature.geometry.coordinates[0], bearing: 0 };
     }
-    return cleaned;
-  }
-
-  function findSequentialPosition(coords, clickLngLat) {
-    if (!coords || coords.length < 2) return { ratio: 0, snappedCoord: clickLngLat, bearing: 0 };
-
-    let totalLength = 0;
-    const segLengths = [];
-    for (let i = 0; i < coords.length - 1; i++) {
-      const d = calcDistKm(coords[i], coords[i+1]);
-      segLengths.push(d);
-      totalLength += d;
-    }
-
-    if (totalLength === 0) return { ratio: 0, snappedCoord: coords[0], bearing: 0 };
-
-    const px = clickLngLat[0];
-    const py = clickLngLat[1];
-
-    let minDistance = Infinity;
-    let bestSegIdx = 0;
-    let bestT = 0;
-    let bestCoord = coords[0];
-
-    for (let i = 0; i < coords.length - 1; i++) {
-      const p1 = coords[i];
-      const p2 = coords[i+1];
-
-      const dx = p2[0] - p1[0];
-      const dy = p2[1] - p1[1];
-      const lenSq = dx * dx + dy * dy;
-
-      let t = 0;
-      if (lenSq > 0) {
-        t = ((px - p1[0]) * dx + (py - p1[1]) * dy) / lenSq;
-        t = Math.max(0, Math.min(1, t));
-      }
-
-      const snapX = p1[0] + t * dx;
-      const snapY = p1[1] + t * dy;
-      const d = calcDistKm(clickLngLat, [snapX, snapY]);
-
-      if (d < minDistance) {
-        minDistance = d;
-        bestSegIdx = i;
-        bestT = t;
-        bestCoord = [snapX, snapY];
-      }
-    }
-
-    let accumulated = 0;
-    for (let i = 0; i < bestSegIdx; i++) {
-      accumulated += segLengths[i];
-    }
-    accumulated += segLengths[bestSegIdx] * bestT;
-
-    const ratio = Math.max(0, Math.min(1, accumulated / totalLength));
-    const bearing = turf.bearing(turf.point(coords[bestSegIdx]), turf.point(coords[bestSegIdx + 1]));
-
-    return {
-      ratio: ratio,
-      snappedCoord: bestCoord,
-      bearing: bearing,
-      totalLength: totalLength
-    };
-  }
-
-  function getCoordAlongSequence(coords, ratio) {
-    if (!coords || coords.length < 2) return null;
-    let totalLength = 0;
-    const segLengths = [];
-    for (let i = 0; i < coords.length - 1; i++) {
-      const d = calcDistKm(coords[i], coords[i+1]);
-      segLengths.push(d);
-      totalLength += d;
-    }
-    if (totalLength === 0) return { coord: coords[0], bearing: 0 };
-
-    const targetDist = totalLength * Math.max(0, Math.min(1, ratio));
-    let currentDist = 0;
-
-    for (let i = 0; i < coords.length - 1; i++) {
-      const d = segLengths[i];
-      if (currentDist + d >= targetDist || i === coords.length - 2) {
-        const remaining = targetDist - currentDist;
-        const t = d > 0 ? Math.max(0, Math.min(1, remaining / d)) : 0;
-        const p1 = coords[i];
-        const p2 = coords[i+1];
-        const coord = [p1[0] + t * (p2[0] - p1[0]), p1[1] + t * (p2[1] - p1[1])];
-        const bearing = turf.bearing(turf.point(p1), turf.point(p2));
-        return { coord, bearing };
-      }
-      currentDist += d;
-    }
-    return { coord: coords[coords.length - 1], bearing: 0 };
   }
 
   function zoomToActiveLine() {
@@ -527,37 +468,33 @@
     }
   }
 
-  /* 00:00 강제 리셋을 완전히 분쇄하는 Seek 실행기 */
-  function forceAccurateSeek() {
-    if (targetSeekRatio === null || !player) return;
+  function ensureVideoSeek() {
+    if (targetRatioToSeek === null || !player) return;
     clearInterval(seekPoller);
 
-    let tries = 0;
+    let count = 0;
     seekPoller = setInterval(() => {
-      tries++;
+      count++;
       if (typeof player.getDuration !== 'function') return;
-      
+
       const dur = player.getDuration();
       if (dur && dur > 0) {
-        const jumpSeconds = dur * targetSeekRatio;
-        player.seekTo(jumpSeconds, true);
+        const sec = dur * targetRatioToSeek;
+        player.seekTo(sec, true);
 
-        // 3회 확인 후 완전 해제 (플레이어의 0초 리셋 방지 보장)
-        if (tries >= 3) {
+        if (count >= 3) {
           clearInterval(seekPoller);
-          targetSeekRatio = null;
+          targetRatioToSeek = null;
         }
       }
 
-      if (tries > 50) {
-        clearInterval(seekPoller);
-      }
+      if (count > 50) clearInterval(seekPoller);
     }, 150);
   }
 
   map.on('load', () => {
     Promise.all([
-      fetch('./routes.geojson').then(r => r.json()),
+      fetch('./routes.geojson?t=' + Date.now()).then(r => r.json()),
       fetch('https://d2ad6b4ur7yvpq.cloudfront.net/naturalearth-3.3.0/ne_110m_admin_0_countries.geojson').then(r => r.json()),
       fetch('https://raw.githubusercontent.com/southkorea/southkorea-maps/master/kostat/2018/json/skorea-provinces-2018-geo.json').then(r => r.json()),
       fetch('https://raw.githubusercontent.com/southkorea/southkorea-maps/master/kostat/2018/json/skorea-municipalities-2018-geo.json').then(r => r.json())
@@ -621,7 +558,6 @@
         }
       });
 
-      /* 행정구역 트리 구성 (시·도 간 시군구 혼입 완전 격리) */
       rawGeojsonData.features.forEach((f, idx) => {
         f.id = idx;
         const p = f.properties || {};
@@ -636,11 +572,9 @@
               if (!adminHierarchy[c][sd]) adminHierarchy[c][sd] = new Set();
               sigs.forEach(sg => {
                 if (sg !== "-" && sg !== "") {
-                  // 서울특별시의 경우 오직 서울 25개 자치구만 바인딩
                   if (sd === "서울특별시") {
                     if (SEOUL_DISTRICTS.has(sg)) adminHierarchy[c][sd].add(sg);
                   } else {
-                    // 경기도 등 타 시도의 경우 서울 자치구가 아닌 경우만 바인딩
                     if (!SEOUL_DISTRICTS.has(sg)) adminHierarchy[c][sd].add(sg);
                   }
                 }
@@ -723,7 +657,6 @@
       hoverPopup.remove();
     });
 
-    // 코스 클릭 이벤트
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
@@ -745,15 +678,15 @@
 
       zoomToActiveLine();
 
-      const orderedCoords = getCleanedCoords(activeLine);
       const clickedLngLat = [e.lngLat.lng, e.lngLat.lat];
-
-      const pos = findSequentialPosition(orderedCoords, clickedLngLat);
+      
+      // 선 전체 벡터 길이 기준 등분 비율 산출
+      const pos = getLinearPosition(activeLine, clickedLngLat);
 
       trackingMarker.setLngLat(pos.snappedCoord).addTo(map);
       arrowSvg.style.transform = `rotate(${pos.bearing}deg)`;
 
-      targetSeekRatio = pos.ratio;
+      targetRatioToSeek = pos.ratio;
 
       if (currentVideoId !== videoId) {
         currentVideoId = videoId;
@@ -763,28 +696,26 @@
           document.getElementById('player-container').innerHTML = 
             `<iframe id="yt-player" src="https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
         }
-        forceAccurateSeek();
       } else {
         if (player && typeof player.getDuration === 'function') {
           const dur = player.getDuration();
           if (dur > 0) {
-            player.seekTo(dur * targetSeekRatio, true);
-            targetSeekRatio = null;
-          } else {
-            forceAccurateSeek();
+            player.seekTo(dur * targetRatioToSeek, true);
+            targetRatioToSeek = null;
           }
         }
       }
+
+      ensureVideoSeek();
     });
   });
 
   function onPlayerStateChange(event) {
     clearInterval(syncTimer);
 
-    // 영상 재생이 시작될 때 대기 중인 점프 비율이 있다면 즉시 이동
     if (event.data === YT.PlayerState.PLAYING) {
-      if (targetSeekRatio !== null) {
-        forceAccurateSeek();
+      if (targetRatioToSeek !== null) {
+        ensureVideoSeek();
       }
 
       if (activeLine) {
@@ -794,9 +725,8 @@
           const dur = player.getDuration();
           if (!dur || dur === 0) return;
 
-          const orderedCoords = getCleanedCoords(activeLine);
           const progress = curTime / dur;
-          const currentLoc = getCoordAlongSequence(orderedCoords, progress);
+          const currentLoc = getCoordAlongLinear(activeLine, progress);
 
           if (currentLoc) {
             trackingMarker.setLngLat(currentLoc.coord);
@@ -814,7 +744,7 @@
     clearInterval(syncTimer);
     clearInterval(seekPoller);
     trackingMarker.remove();
-    targetSeekRatio = null;
+    targetRatioToSeek = null;
     currentVideoId = null;
     updateActiveRouteHighlight(null);
     updateHoverHighlight(null);
