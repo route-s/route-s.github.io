@@ -357,35 +357,24 @@
     return match ? match[1] : null;
   }
 
-  /* ================= [원론적 해결] 선분 벡터 기준 순수 양 끝단 추출 함수 ================= */
+  /* ================= [최종 보정] 선분 전체 거리 기반 완벽한 0% / 100% 끝단 추출 ================= */
   function getTrueLineEnds(feature) {
     try {
-      // MultiLineString 이거나 끊긴 선일 경우 하나의 LineString 벡터로 평탄화(Flatten)
-      const flattened = turf.flatten(feature);
-      const geom = flattened.features ? flattened.features[0].geometry : feature.geometry;
-      const coords = geom.coordinates;
+      const totalLen = turf.length(feature, { units: 'kilometers' });
+      const startPoint = turf.along(feature, 0, { units: 'kilometers' });
+      const endPoint = turf.along(feature, totalLen, { units: 'kilometers' });
 
-      if (geom.type === 'LineString') {
-        return {
-          start: coords[0],
-          end: coords[coords.length - 1]
-        };
-      } else if (geom.type === 'MultiLineString') {
-        const firstSegment = coords[0];
-        const lastSegment = coords[coords.length - 1];
-        return {
-          start: firstSegment[0],
-          end: lastSegment[lastSegment.length - 1]
-        };
-      }
-    } catch (e) {}
-
-    // 예외 발생 시 기존 방식 Fallback
-    const raw = turf.coordAll(feature);
-    return {
-      start: raw[0] || [0, 0],
-      end: raw[raw.length - 1] || [0, 0]
-    };
+      return {
+        start: startPoint.geometry.coordinates,
+        end: endPoint.geometry.coordinates
+      };
+    } catch (e) {
+      const raw = turf.coordAll(feature);
+      return {
+        start: raw[0] || [0, 0],
+        end: raw[raw.length - 1] || [0, 0]
+      };
+    }
   }
 
   function zoomToActiveLine() {
@@ -602,7 +591,7 @@
       hoverPopup.remove();
     });
 
-    // 경로 클릭 시: 벡터 기준 순수 양 끝단(시작점, 끝점) 추출하여 마커 표시
+    // 경로 클릭 시: 0% 지점과 100% 지점을 수학적으로 확정하여 마커 표시
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
@@ -624,7 +613,7 @@
 
       zoomToActiveLine();
 
-      // 벡터의 순수 시작점과 끝점 좌표 추출
+      // 총 길이 기반 0%와 100% 지점 추출
       const ends = getTrueLineEnds(activeLine);
       startMarker.setLngLat(ends.start).addTo(map);
       endMarker.setLngLat(ends.end).addTo(map);
