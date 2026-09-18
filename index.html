@@ -39,11 +39,10 @@
       cursor: pointer;
     }
     .filter-select:disabled {
-      opacity: 0.4;
+      opacity: 0.35;
       cursor: not-allowed;
     }
 
-    /* 로딩 인디케이터 */
     #loading-badge {
       font-size: 11px;
       color: #00ffff;
@@ -92,7 +91,6 @@
 </head>
 <body>
 
-<!-- 행정구역 3단 필터 -->
 <div id="filter-container">
   <select id="country-select" class="filter-select">
     <option value="ALL">1단계: 국가 전체</option>
@@ -108,7 +106,6 @@
 
 <div id="map"></div>
 
-<!-- 유튜브 플로팅 재생창 -->
 <div id="player-panel">
   <button id="close-btn" onclick="closePlayer()">×</button>
   <div id="player-container"><div id="yt-player"></div></div>
@@ -126,7 +123,7 @@
   let trackingMarker = null;
   let syncTimer = null;
   let rawGeojsonData = null;
-  let adminHierarchy = {}; // { 국가: { 시도: Set(시군구) } }
+  let adminHierarchy = {}; // { 국가명: { 시도명: Set(시군구명) } }
 
   function onYouTubeIframeAPIReady() {
     player = new YT.Player('yt-player', {
@@ -137,7 +134,6 @@
     });
   }
 
-  // Esri 다크 캔버스 + 지명/행정구역 라벨 레이어
   const map = new maplibregl.Map({
     container: 'map',
     style: {
@@ -172,30 +168,36 @@
   markerEl.style.boxShadow = '0 0 10px #ff4757';
   trackingMarker = new maplibregl.Marker({ element: markerEl });
 
-  // 통계청/행정안전부 오픈 시군구 폴리곤 데이터 URL
-  const SIG_DATA_URL = 'https://raw.githubusercontent.com/southkorea/southkorea-maps/master/kostat/2018/json/skorea-municipalities-2018-geo.json';
+  // 공공 표준 시군구 데이터셋 (통계청/행안부 정식 5자리 코드)
+  const KOREA_SIG_URL = 'https://raw.githubusercontent.com/southkorea/southkorea-maps/master/kostat/2018/json/skorea-municipalities-2018-geo.json';
+  // 전 세계 국가 경계 데이터셋 (Natural Earth 경량 110m)
+  const WORLD_COUNTRIES_URL = 'https://d2ad6b4ur7yvpq.cloudfront.net/naturalearth-3.3.0/ne_110m_admin_0_countries.geojson';
 
-  // 시도 식별 헬퍼
-  function getSidoFromCode(code) {
-    const c = code.substring(0, 2);
-    const sidoMap = {
-      "11": "서울특별시", "26": "부산광역시", "27": "대구광역시", "28": "인천광역시",
-      "29": "광주광역시", "30": "대전광역시", "31": "울산광역시", "36": "세종특별자치시",
-      "41": "경기도", "42": "강원특별자치도", "43": "충청북도", "44": "충청남도",
-      "45": "전라북도", "46": "전라남도", "47": "경상북도", "48": "경상남도", "50": "제주특별자치도"
-    };
-    return sidoMap[c] || "기타시도";
-  }
+  // 한국 법정 행정구역코드 앞 2자리(시도) 표준 매핑 테이블
+  const KOR_SIDO_CODE_MAP = {
+    "11": "서울특별시", "21": "부산광역시", "22": "대구광역시", "23": "인천광역시",
+    "24": "광주광역시", "25": "대전광역시", "26": "울산광역시", "29": "세종특별자치시",
+    "31": "경기도", "32": "강원특별자치도", "33": "충청북도", "34": "충청남도",
+    "35": "전북특별자치도", "36": "전라남도", "37": "경상북도", "38": "경상남도", "39": "제주특별자치도"
+  };
+
+  // 영문 국가명 ➔ 한글 번역 사전
+  const COUNTRY_NAME_KO = {
+    "South Korea": "대한민국", "Korea": "대한민국", "Republic of Korea": "대한민국",
+    "Japan": "일본", "Taiwan": "대만", "United States": "미국", "Vietnam": "베트남",
+    "China": "중국", "Thailand": "태국", "Singapore": "싱가포르", "United Kingdom": "영국",
+    "France": "프랑스", "Germany": "독일", "Italy": "이탈리아", "Canada": "캐나다"
+  };
 
   map.on('load', () => {
-    // 1. 도보 경로와 대한민국 최신 시군구 폴리곤을 병렬로 로드
     Promise.all([
       fetch('./routes.geojson').then(r => r.json()),
-      fetch(SIG_DATA_URL).then(r => r.json()).catch(() => null)
-    ]).then(([routesData, sigData]) => {
+      fetch(KOREA_SIG_URL).then(r => r.json()).catch(() => null),
+      fetch(WORLD_COUNTRIES_URL).then(r => r.json()).catch(() => null)
+    ]).then(([routesData, korSigData, worldData]) => {
       rawGeojsonData = routesData;
 
-      // 2. 동적 공간 연산 (코스 시작점 ➔ 행정구역 매핑)
+      // 1,879개 경로에 대해 공간 연산 수행
       rawGeojsonData.features.forEach((f, idx) => {
         f.id = idx;
         const coords = turf.coordAll(f);
@@ -203,34 +205,53 @@
         const lng = startPt.geometry.coordinates[0];
         const lat = startPt.geometry.coordinates[1];
 
-        // 기본 국가 판별
-        const isKR = (lng >= 124.0 && lng <= 132.0 && lat >= 33.0 && lat <= 38.9);
-        f.properties.country = isKR ? "대한민국" : "해외";
-        f.properties.sido = isKR ? "기타시도" : "해외";
-        f.properties.sigungu = isKR ? "기타시군" : "해외";
+        // 기본값 설정
+        let detectedCountry = "해외";
+        let detectedSido = "-";
+        let detectedSigungu = "-";
 
-        if (isKR && sigData) {
-          // Turf point-in-polygon 연산으로 실제 행정구역 폴리곤 판정
-          for (let poly of sigData.features) {
+        // 대한민국 영역 여부 체크
+        const isWithinKorBox = (lng >= 124.0 && lng <= 132.0 && lat >= 33.0 && lat <= 38.9);
+
+        if (isWithinKorBox && korSigData) {
+          detectedCountry = "대한민국";
+          for (let poly of korSigData.features) {
             if (turf.booleanPointInPolygon(startPt, poly)) {
-              f.properties.sigungu = poly.properties.name;
-              f.properties.sido = getSidoFromCode(poly.properties.code || "");
+              detectedSigungu = poly.properties.name || "기타구";
+              const code = String(poly.properties.code || "");
+              const sidoPrefix = code.substring(0, 2);
+              detectedSido = KOR_SIDO_CODE_MAP[sidoPrefix] || "기타시도";
+              break;
+            }
+          }
+          if (detectedSido === "-") {
+            detectedSido = "기타시도";
+            detectedSigungu = "기타시군";
+          }
+        } else if (worldData) {
+          // 해외 국가 판별
+          for (let countryPoly of worldData.features) {
+            if (turf.booleanPointInPolygon(startPt, countryPoly)) {
+              const engName = countryPoly.properties.name || countryPoly.properties.ADMIN || "해외";
+              detectedCountry = COUNTRY_NAME_KO[engName] || engName;
               break;
             }
           }
         }
 
-        // 행정구역 트리 구성
-        const c = f.properties.country;
-        const s = f.properties.sido;
-        const g = f.properties.sigungu;
+        f.properties.country = detectedCountry;
+        f.properties.sido = detectedSido;
+        f.properties.sigungu = detectedSigungu;
 
-        if (!adminHierarchy[c]) adminHierarchy[c] = {};
-        if (!adminHierarchy[c][s]) adminHierarchy[c][s] = new Set();
-        adminHierarchy[c][s].add(g);
+        // 계층 트리 구축
+        if (!adminHierarchy[detectedCountry]) adminHierarchy[detectedCountry] = {};
+        if (detectedCountry === "대한민국") {
+          if (!adminHierarchy[detectedCountry][detectedSido]) adminHierarchy[detectedCountry][detectedSido] = new Set();
+          if (detectedSigungu !== "-") adminHierarchy[detectedCountry][detectedSido].add(detectedSigungu);
+        }
       });
 
-      // 3. 지도 레이어 등록
+      // 지도 레이어 등록
       map.addSource('routes', {
         type: 'geojson',
         data: rawGeojsonData
@@ -248,7 +269,6 @@
         }
       });
 
-      // 4. 추출된 실제 데이터 기반으로 드롭다운 동적 생성
       buildDynamicFilters();
       document.getElementById('loading-badge').style.display = 'none';
     });
@@ -259,8 +279,13 @@
       map.getCanvas().style.cursor = 'pointer';
       const props = e.features[0].properties;
       const title = props.name || props.Name || '도보 코스';
-      const locText = props.sido && props.sigungu ? `<br><span style="color:#aaa; font-size:11px;">[${props.sido} ${props.sigungu}]</span>` : '';
-      hoverPopup.setLngLat(e.lngLat).setHTML(`<strong>${title}</strong>${locText}<br><span style="color:#00ffff;">클릭하여 영상 시청</span>`).addTo(map);
+      let locTag = '';
+      if (props.country === '대한민국') {
+        locTag = `<br><span style="color:#aaa; font-size:11px;">[${props.sido} ${props.sigungu}]</span>`;
+      } else {
+        locTag = `<br><span style="color:#aaa; font-size:11px;">[${props.country}]</span>`;
+      }
+      hoverPopup.setLngLat(e.lngLat).setHTML(`<strong>${title}</strong>${locTag}<br><span style="color:#00ffff;">클릭하여 영상 시청</span>`).addTo(map);
     });
 
     map.on('mouseleave', 'routes-line', () => {
@@ -268,7 +293,7 @@
       hoverPopup.remove();
     });
 
-    // 코스 클릭 이벤트
+    // 클릭 시 유튜브 로드 & 위치 트래킹
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       const props = activeLine.properties;
@@ -307,15 +332,23 @@
     });
   });
 
-  // 드롭다운 동적 생성 및 바인딩
+  // 드롭다운 컨트롤러
   const countrySelect = document.getElementById('country-select');
   const sidoSelect = document.getElementById('sido-select');
   const sigunguSelect = document.getElementById('sigungu-select');
 
   function buildDynamicFilters() {
-    // 1단계 국가 옵션 채우기
     countrySelect.innerHTML = '<option value="ALL">1단계: 국가 전체</option>';
-    Object.keys(adminHierarchy).sort().forEach(country => {
+
+    // 대한민국을 목록 최상단에 고정하고 나머지는 가나다순 정렬
+    const countries = Object.keys(adminHierarchy);
+    const sortedCountries = countries.sort((a, b) => {
+      if (a === '대한민국') return -1;
+      if (b === '대한민국') return 1;
+      return a.localeCompare(b);
+    });
+
+    sortedCountries.forEach(country => {
       countrySelect.innerHTML += `<option value="${country}">${country}</option>`;
     });
 
@@ -324,13 +357,14 @@
       sidoSelect.innerHTML = '<option value="ALL">2단계: 시·도 전체</option>';
       sigunguSelect.innerHTML = '<option value="ALL">3단계: 시·군·구 전체</option>';
 
-      if (c !== 'ALL' && c === '대한민국' && adminHierarchy[c]) {
+      if (c === '대한민국') {
         sidoSelect.disabled = false;
         Object.keys(adminHierarchy[c]).sort().forEach(sido => {
           sidoSelect.innerHTML += `<option value="${sido}">${sido}</option>`;
         });
         sigunguSelect.disabled = true;
       } else {
+        // 해외 국가 선택 시 2·3단계 비활성화
         sidoSelect.disabled = true;
         sigunguSelect.disabled = true;
       }
@@ -342,7 +376,7 @@
       const s = sidoSelect.value;
       sigunguSelect.innerHTML = '<option value="ALL">3단계: 시·군·구 전체</option>';
 
-      if (s !== 'ALL' && adminHierarchy[c] && adminHierarchy[c][s]) {
+      if (c === '대한민국' && s !== 'ALL' && adminHierarchy[c] && adminHierarchy[c][s]) {
         sigunguSelect.disabled = false;
         Array.from(adminHierarchy[c][s]).sort().forEach(sig => {
           sigunguSelect.innerHTML += `<option value="${sig}">${sig}</option>`;
@@ -373,7 +407,7 @@
       map.setFilter('routes-line', filterExp);
     }
 
-    // 선택된 지역으로 줌 이동
+    // 선택된 지역의 BBOX로 부드럽게 줌인
     const filteredFeatures = rawGeojsonData.features.filter(f => {
       if (c !== 'ALL' && f.properties.country !== c) return false;
       if (c === '대한민국' && sd !== 'ALL' && f.properties.sido !== sd) return false;
