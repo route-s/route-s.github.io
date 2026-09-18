@@ -1,1 +1,219 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>ROUTE S - 아카이브 지도</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- MapLibre GL JS -->
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+  <!-- Turf.js (거리 계산 및 실시간 위치 내삽) -->
+  <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
 
+  <style>
+    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #121212; }
+    #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+
+    /* 유튜브 플레이어 오버레이 패널 */
+    #player-panel {
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      width: 380px;
+      max-width: calc(100vw - 30px);
+      background: rgba(20, 20, 20, 0.95);
+      color: #fff;
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.7);
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+      z-index: 100;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    #player-container { width: 100%; height: 215px; background: #000; }
+    #info-box { padding: 14px 16px; }
+    #video-title { font-size: 15px; font-weight: bold; margin-bottom: 6px; color: #00d2d3; }
+    #video-guide { font-size: 11px; color: #888; margin-bottom: 8px; }
+    #close-btn {
+      position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.6);
+      color: #fff; border: none; border-radius: 50%; width: 28px; height: 28px;
+      cursor: pointer; font-size: 16px; line-height: 28px; text-align: center; z-index: 101;
+    }
+
+    /* 툴팁 스타일 */
+    .maplibregl-popup-content {
+      background: rgba(15, 15, 15, 0.9);
+      color: #fff;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 12px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+  </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- 유튜브 플로팅 재생창 -->
+<div id="player-panel">
+  <button id="close-btn" onclick="closePlayer()">×</button>
+  <div id="player-container"><div id="yt-player"></div></div>
+  <div id="info-box">
+    <div id="video-title">코스 명칭</div>
+    <div id="video-guide">💡 지도 위 경로를 클릭하면 해당 위치 영상으로 즉시 이동합니다.</div>
+  </div>
+</div>
+
+<script src="https://www.youtube.com/iframe_api"></script>
+
+<script>
+  let player = null;
+  let activeLine = null;
+  let trackingMarker = null;
+  let syncTimer = null;
+
+  // 유튜브 API 초기화
+  function onYouTubeIframeAPIReady() {
+    player = new YT.Player('yt-player', {
+      height: '100%',
+      width: '100%',
+      playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0 },
+      events: { 'onStateChange': onPlayerStateChange }
+    });
+  }
+
+  // 다크 타일 기반 지도 생성
+  const map = new maplibregl.Map({
+    container: 'map',
+    style: {
+      version: 8,
+      sources: {
+        'carto-dark': {
+          type: 'raster',
+          tiles: ['https://basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png'],
+          tileSize: 256,
+          attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+        }
+      },
+      layers: [{ id: 'carto-dark', type: 'raster', source: 'carto-dark', minzoom: 0, maxzoom: 19 }]
+    },
+    center: [126.9780, 37.5665],
+    zoom: 11
+  });
+
+  // 실시간 이동 마커 (네온 레드 포인트)
+  const markerEl = document.createElement('div');
+  markerEl.style.width = '14px';
+  markerEl.style.height = '14px';
+  markerEl.style.borderRadius = '50%';
+  markerEl.style.backgroundColor = '#ff4757';
+  markerEl.style.border = '2px solid #ffffff';
+  markerEl.style.boxShadow = '0 0 8px #ff4757';
+  trackingMarker = new maplibregl.Marker({ element: markerEl });
+
+  map.on('load', () => {
+    // GeoJSON 로드
+    map.addSource('routes', {
+      type: 'geojson',
+      data: './routes.geojson'
+    });
+
+    // 전체 경로 표출 (기본 반투명 네온 민트)
+    map.addLayer({
+      id: 'routes-line',
+      type: 'line',
+      source: 'routes',
+      layout: { 'line-join': 'round', 'line-cap': 'round' },
+      paint: {
+        'line-color': '#00d2d3',
+        'line-width': 3.5,
+        'line-opacity': 0.65
+      }
+    });
+
+    // 호버 툴팁
+    const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
+    map.on('mouseenter', 'routes-line', (e) => {
+      map.getCanvas().style.cursor = 'pointer';
+      const props = e.features[0].properties;
+      const title = props.name || props.Name || '도보 코스';
+      hoverPopup.setLngLat(e.lngLat).setHTML(`<strong>${title}</strong><br><span style="color:#00d2d3;">클릭하여 영상 시청</span>`).addTo(map);
+    });
+
+    map.on('mouseleave', 'routes-line', () => {
+      map.getCanvas().style.cursor = '';
+      hoverPopup.remove();
+    });
+
+    // 코스 클릭 이벤트: 영상 로드 및 클릭 지점 동기화
+    map.on('click', 'routes-line', (e) => {
+      activeLine = e.features[0];
+      const props = activeLine.properties;
+      const title = props.name || props.Name || '도보 코스';
+      const rawDesc = props.description || props.Description || '';
+
+      // KML description 내부의 유튜브 11자리 영상 ID 정규식 추출
+      const match = rawDesc.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/);
+      const videoId = match ? match[1] : null;
+
+      if (!videoId) {
+        alert("이 경로에 연결된 유튜브 영상 주소를 찾을 수 없습니다.");
+        return;
+      }
+
+      document.getElementById('player-panel').style.display = 'flex';
+      document.getElementById('video-title').innerText = title;
+
+      if (player && typeof player.loadVideoById === 'function') {
+        player.loadVideoById(videoId);
+      }
+
+      // 클릭한 지점으로 영상 시간 이동 (Seek)
+      const clickedCoords = [e.lngLat.lng, e.lngLat.lat];
+      const snapped = turf.nearestPointOnLine(activeLine, turf.point(clickedCoords));
+      const totalLen = turf.length(activeLine, { units: 'kilometers' });
+      const sliced = turf.lineSlice(turf.point(activeLine.geometry.coordinates[0]), snapped, activeLine);
+      const curLen = turf.length(sliced, { units: 'kilometers' });
+
+      setTimeout(() => {
+        const dur = player.getDuration() || 0;
+        if (dur > 0 && totalLen > 0) {
+          player.seekTo((curLen / totalLen) * dur, true);
+        }
+      }, 700);
+
+      trackingMarker.setLngLat(snapped.geometry.coordinates).addTo(map);
+    });
+  });
+
+  // 영상 재생 시간에 따른 지도 위 마커 실시간 이동
+  function onPlayerStateChange(event) {
+    clearInterval(syncTimer);
+    if (event.data === YT.PlayerState.PLAYING && activeLine) {
+      syncTimer = setInterval(() => {
+        const curTime = player.getCurrentTime();
+        const dur = player.getDuration();
+        if (!dur || dur === 0) return;
+
+        const totalLen = turf.length(activeLine, { units: 'kilometers' });
+        const targetLen = totalLen * (curTime / dur);
+
+        const currentPos = turf.along(activeLine, targetLen, { units: 'kilometers' });
+        trackingMarker.setLngLat(currentPos.geometry.coordinates);
+      }, 500);
+    }
+  }
+
+  function closePlayer() {
+    document.getElementById('player-panel').style.display = 'none';
+    if (player && typeof player.stopVideo === 'function') player.stopVideo();
+    clearInterval(syncTimer);
+    trackingMarker.remove();
+  }
+</script>
+</body>
+</html>
