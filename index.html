@@ -209,6 +209,7 @@
 
 <script>
   let player = null;
+  let isPlayerReady = false;
   let activeLine = null;
   let activeLineId = null;
   let hoveredLineId = null;
@@ -219,8 +220,7 @@
   let adminHierarchy = {};
   let isSplitMode = false;
   let currentVideoId = null;
-  let pendingSeekRatio = null;
-  let seekCheckInterval = null;
+  let targetSeekRatio = null; // 사용자가 클릭한 지점의 진행 비율 (0 ~ 1)
 
   const COUNTRY_EN_MAP = {
     "대한민국": "Korea", "일본": "Japan", "싱가포르": "Singapore",
@@ -290,6 +290,7 @@
         'origin': window.location.origin 
       },
       events: {
+        'onReady': () => { isPlayerReady = true; },
         'onStateChange': onPlayerStateChange
       }
     });
@@ -520,33 +521,6 @@
     }
   }
 
-  /* ================= [00:00 리셋 완전 방지] 정밀 탐색 스케줄러 ================= */
-  function executePreciseSeek(targetRatio) {
-    if (targetRatio === null || targetRatio === undefined) return;
-    pendingSeekRatio = targetRatio;
-
-    clearInterval(seekCheckInterval);
-
-    let attempts = 0;
-    seekCheckInterval = setInterval(() => {
-      attempts++;
-      if (!player || typeof player.getDuration !== 'function') return;
-
-      const dur = player.getDuration();
-      // 유효한 총 영상 길이가 확인되는 즉시 목표 시간으로 이동
-      if (dur && dur > 0) {
-        const targetSeconds = dur * pendingSeekRatio;
-        player.seekTo(targetSeconds, true);
-        clearInterval(seekCheckInterval);
-        pendingSeekRatio = null;
-      }
-
-      if (attempts > 100) {
-        clearInterval(seekCheckInterval);
-      }
-    }, 100);
-  }
-
   map.on('load', () => {
     Promise.all([
       fetch('./routes.geojson').then(r => r.json()),
@@ -636,7 +610,6 @@
         data: rawGeojsonData
       });
 
-      // 1. 기본 라인 레이어 (민트색 기본선)
       map.addLayer({
         id: 'routes-line',
         type: 'line',
@@ -649,7 +622,6 @@
         }
       });
 
-      // 2. [신규 인터랙티브] 마우스 호버(Hover) 시 두꺼워지는 글로우 레이어
       map.addLayer({
         id: 'routes-hover-line',
         type: 'line',
@@ -663,7 +635,6 @@
         }
       });
 
-      // 3. 선택된 활성 라인 레이어 (형광 옐로우골드 두꺼운 선)
       map.addLayer({
         id: 'routes-active-line',
         type: 'line',
@@ -682,13 +653,11 @@
 
     const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
 
-    // 마우스 호버 이벤트: 선 두께 확장 및 툴팁 표시
     map.on('mouseenter', 'routes-line', (e) => {
       map.getCanvas().style.cursor = 'pointer';
       const feature = e.features[0];
       hoveredLineId = feature.id !== undefined ? feature.id : feature.properties.id;
 
-      // 마우스가 올라간 선을 두껍게 확장 (선택 예정 상태 표시)
       updateHoverHighlight(hoveredLineId);
 
       const props = feature.properties || {};
@@ -723,7 +692,6 @@
         return;
       }
 
-      // 호버 해제 후 활성 선택 강조
       updateHoverHighlight(null);
       updateActiveRouteHighlight(activeLineId);
 
@@ -740,7 +708,9 @@
       trackingMarker.setLngLat(pos.snappedCoord).addTo(map);
       arrowSvg.style.transform = `rotate(${pos.bearing}deg)`;
 
-      // 영상 교체 또는 즉시 점프
+      // 탐색 목표 비율 저장
+      targetSeekRatio = pos.ratio;
+
       if (currentVideoId !== videoId) {
         currentVideoId = videoId;
         if (player && typeof player.loadVideoById === 'function') {
@@ -749,26 +719,32 @@
           document.getElementById('player-container').innerHTML = 
             `<iframe id="yt-player" src="https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
         }
-        executePreciseSeek(pos.ratio);
       } else {
+        // 동일 영상 시청 중 다른 구간 클릭 시 즉각 이동
         if (player && typeof player.getDuration === 'function') {
           const dur = player.getDuration();
           if (dur > 0) {
-            player.seekTo(dur * pos.ratio, true);
-          } else {
-            executePreciseSeek(pos.ratio);
+            player.seekTo(dur * targetSeekRatio, true);
+            targetSeekRatio = null;
           }
         }
       }
     });
   });
 
+  // 영상 재생 상태 변경 이벤트
   function onPlayerStateChange(event) {
     clearInterval(syncTimer);
 
+    // [핵심] 비디오가 완전히 로드되어 첫 재생(PLAYING)을 시작한 순간에 단 1회 타임스탬프 점프 실행
     if (event.data === YT.PlayerState.PLAYING) {
-      if (pendingSeekRatio !== null) {
-        executePreciseSeek(pendingSeekRatio);
+      if (targetSeekRatio !== null && player && typeof player.getDuration === 'function') {
+        const dur = player.getDuration();
+        if (dur && dur > 0) {
+          const jumpSec = dur * targetSeekRatio;
+          player.seekTo(jumpSec, true);
+          targetSeekRatio = null; // 1회 이동 후 잠금 해제 (반복 리셋 방지)
+        }
       }
 
       if (activeLine) {
@@ -796,9 +772,8 @@
     if (isSplitMode) toggleSplitMode();
     if (player && typeof player.stopVideo === 'function') player.stopVideo();
     clearInterval(syncTimer);
-    clearInterval(seekCheckInterval);
     trackingMarker.remove();
-    pendingSeekRatio = null;
+    targetSeekRatio = null;
     currentVideoId = null;
     updateActiveRouteHighlight(null);
     updateHoverHighlight(null);
