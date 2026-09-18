@@ -342,12 +342,10 @@
 
   map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
 
-  // 시작점 마커 DOM 생성 (초록색)
   const startEl = document.createElement('div');
   startEl.className = 'start-marker';
   startMarker = new maplibregl.Marker({ element: startEl, anchor: 'center' });
 
-  // 종료점 마커 DOM 생성 (빨간색)
   const endEl = document.createElement('div');
   endEl.className = 'end-marker';
   endMarker = new maplibregl.Marker({ element: endEl, anchor: 'center' });
@@ -359,16 +357,35 @@
     return match ? match[1] : null;
   }
 
-  function getCleanedCoords(feature) {
-    const raw = turf.coordAll(feature);
-    const cleaned = [];
-    for (let i = 0; i < raw.length; i++) {
-      const p = raw[i];
-      if (p && !isNaN(p[0]) && !isNaN(p[1])) {
-        cleaned.push([p[0], p[1]]);
+  /* ================= [원론적 해결] 선분 벡터 기준 순수 양 끝단 추출 함수 ================= */
+  function getTrueLineEnds(feature) {
+    try {
+      // MultiLineString 이거나 끊긴 선일 경우 하나의 LineString 벡터로 평탄화(Flatten)
+      const flattened = turf.flatten(feature);
+      const geom = flattened.features ? flattened.features[0].geometry : feature.geometry;
+      const coords = geom.coordinates;
+
+      if (geom.type === 'LineString') {
+        return {
+          start: coords[0],
+          end: coords[coords.length - 1]
+        };
+      } else if (geom.type === 'MultiLineString') {
+        const firstSegment = coords[0];
+        const lastSegment = coords[coords.length - 1];
+        return {
+          start: firstSegment[0],
+          end: lastSegment[lastSegment.length - 1]
+        };
       }
-    }
-    return cleaned;
+    } catch (e) {}
+
+    // 예외 발생 시 기존 방식 Fallback
+    const raw = turf.coordAll(feature);
+    return {
+      start: raw[0] || [0, 0],
+      end: raw[raw.length - 1] || [0, 0]
+    };
   }
 
   function zoomToActiveLine() {
@@ -585,7 +602,7 @@
       hoverPopup.remove();
     });
 
-    // 경로 클릭 시: 00:00부터 전체 영상 재생 및 시작점/종료점 마커 표시
+    // 경로 클릭 시: 벡터 기준 순수 양 끝단(시작점, 끝점) 추출하여 마커 표시
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
@@ -607,17 +624,11 @@
 
       zoomToActiveLine();
 
-      // 해당 선분의 정점 배열 추출하여 시작점과 종료점에 마커 부착
-      const coords = getCleanedCoords(activeLine);
-      if (coords.length >= 2) {
-        const startCoord = coords[0];
-        const endCoord = coords[coords.length - 1];
+      // 벡터의 순수 시작점과 끝점 좌표 추출
+      const ends = getTrueLineEnds(activeLine);
+      startMarker.setLngLat(ends.start).addTo(map);
+      endMarker.setLngLat(ends.end).addTo(map);
 
-        startMarker.setLngLat(startCoord).addTo(map);
-        endMarker.setLngLat(endCoord).addTo(map);
-      }
-
-      // 영상 로드 및 00:00 처음부터 재생
       if (currentVideoId !== videoId) {
         currentVideoId = videoId;
         if (player && typeof player.loadVideoById === 'function') {
