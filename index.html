@@ -222,6 +222,7 @@
   let isSplitMode = false;
   let currentVideoId = null;
   let pendingSeekRatio = null;
+  let seekCheckInterval = null;
 
   /* ================= 한영 표기 매핑 사전 ================= */
   const COUNTRY_EN_MAP = {
@@ -292,7 +293,6 @@
         'origin': window.location.origin 
       },
       events: {
-        'onReady': () => { applyPendingSeek(); },
         'onStateChange': onPlayerStateChange
       }
     });
@@ -362,7 +362,6 @@
   function reorderCoordsContinuous(rawCoords) {
     if (!rawCoords || rawCoords.length <= 2) return rawCoords;
 
-    // 중복 제거 및 유효 노드 목록 생성
     const remaining = [];
     for (let i = 0; i < rawCoords.length; i++) {
       const pt = rawCoords[i];
@@ -375,7 +374,6 @@
 
     if (remaining.length <= 2) return remaining;
 
-    // 시작점(첫 점)을 기준으로 가장 가까운 다음 노드를 탐욕적으로 체인 연결
     const ordered = [remaining.shift()];
 
     while (remaining.length > 0) {
@@ -400,7 +398,6 @@
     return ordered;
   }
 
-  // 노드 순서를 단방향으로 재정렬한 안전한 LineString 객체 반환
   function getSafeLine(feature) {
     try {
       const allCoords = turf.coordAll(feature);
@@ -464,15 +461,31 @@
     }, 250);
   }
 
-  function applyPendingSeek() {
-    if (pendingSeekRatio === null || !player) return;
-    try {
+  /* 영상 시간 준비 완료 시 클릭 지점으로 정확히 점프시키는 핵심 함수 */
+  function scheduleSeek(targetRatio) {
+    if (targetRatio === null || targetRatio === undefined) return;
+    pendingSeekRatio = targetRatio;
+    
+    clearInterval(seekCheckInterval);
+
+    let attempts = 0;
+    seekCheckInterval = setInterval(() => {
+      attempts++;
+      if (!player || typeof player.getDuration !== 'function') return;
+
       const dur = player.getDuration();
       if (dur && dur > 0) {
-        player.seekTo(dur * pendingSeekRatio, true);
+        const targetSeconds = dur * pendingSeekRatio;
+        player.seekTo(targetSeconds, true);
+        clearInterval(seekCheckInterval);
         pendingSeekRatio = null;
       }
-    } catch(e) {}
+
+      // 최대 10초(100회) 시도 후 중단
+      if (attempts > 100) {
+        clearInterval(seekCheckInterval);
+      }
+    }, 100);
   }
 
   map.on('load', () => {
@@ -602,7 +615,7 @@
       hoverPopup.remove();
     });
 
-    // 코스 클릭 이벤트: 재정렬된 선분을 바탕으로 정확한 거리/시간 매칭
+    // 코스 클릭 이벤트
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       const props = activeLine.properties || {};
@@ -620,7 +633,6 @@
 
       zoomToActiveLine();
 
-      // 점 순서가 바르게 재정렬된 안전 선분 생성
       const safeLine = getSafeLine(activeLine);
       if (!safeLine) return;
 
@@ -635,7 +647,8 @@
       const sliced = turf.lineSlice(startPt, snapped, safeLine);
       const curLen = turf.length(sliced, { units: 'kilometers' });
 
-      pendingSeekRatio = totalLen > 0 ? (curLen / totalLen) : 0;
+      // 클릭한 위치의 거리 비율 (0 ~ 1)
+      const ratio = totalLen > 0 ? (curLen / totalLen) : 0;
 
       try {
         const delta = Math.min(0.02, (totalLen - curLen) / 2);
@@ -644,25 +657,28 @@
         arrowSvg.style.transform = `rotate(${initBearing}deg)`;
       } catch(err) {}
 
+      // 영상 로드 및 원하는 시간대로 점프 스케줄링
       if (currentVideoId !== videoId) {
         currentVideoId = videoId;
         if (player && typeof player.loadVideoById === 'function') {
-          player.loadVideoById({ videoId: videoId, startSeconds: (player.getDuration() || 0) * pendingSeekRatio });
+          player.loadVideoById(videoId);
         } else {
           document.getElementById('player-container').innerHTML = 
             `<iframe id="yt-player" src="https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
         }
-      } else {
-        applyPendingSeek();
       }
+
+      // getDuration이 준비되는 즉시 정확한 초로 점프하도록 예약
+      scheduleSeek(ratio);
     });
   });
 
   function onPlayerStateChange(event) {
     clearInterval(syncTimer);
 
-    if (event.data === YT.PlayerState.PLAYING || event.data === YT.PlayerState.BUFFERING) {
-      applyPendingSeek();
+    // 재생이 시작될 때 아직 대기 중인 탐색 지점이 있다면 재시도
+    if (event.data === YT.PlayerState.PLAYING && pendingSeekRatio !== null) {
+      scheduleSeek(pendingSeekRatio);
     }
 
     if (event.data === YT.PlayerState.PLAYING && activeLine) {
@@ -687,6 +703,7 @@
     if (isSplitMode) toggleSplitMode();
     if (player && typeof player.stopVideo === 'function') player.stopVideo();
     clearInterval(syncTimer);
+    clearInterval(seekCheckInterval);
     trackingMarker.remove();
     pendingSeekRatio = null;
     currentVideoId = null;
