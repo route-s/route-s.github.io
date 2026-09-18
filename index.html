@@ -53,6 +53,7 @@
       align-items: center;
       backdrop-filter: blur(8px);
       max-width: calc(100vw - 30px);
+      flex-wrap: wrap;
     }
 
     .filter-select {
@@ -73,6 +74,53 @@
       cursor: not-allowed;
     }
 
+    /* 연도 드롭다운 체크박스 패널 스타일 */
+    .dropdown-multiselect {
+      position: relative;
+      display: inline-block;
+    }
+    .dropdown-btn {
+      background: #252836;
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12.5px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dropdown-btn:hover { background: #2f3346; }
+    .dropdown-content {
+      display: none;
+      position: absolute;
+      top: 100%;
+      left: 0;
+      margin-top: 4px;
+      background: #1e222d;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 8px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.7);
+      padding: 10px 12px;
+      z-index: 102;
+      min-width: 140px;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .dropdown-content.show { display: block; }
+    .year-checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #ddd;
+      font-size: 12px;
+      padding: 4px 0;
+      cursor: pointer;
+    }
+    .year-checkbox-label:hover { color: #00ffff; }
+    .year-checkbox-label input { accent-color: #00ffff; cursor: pointer; }
+
     @media (max-width: 640px) {
       #filter-container {
         top: 10px;
@@ -82,7 +130,7 @@
         padding: 6px 8px;
         gap: 4px;
       }
-      .filter-select {
+      .filter-select, .dropdown-btn {
         flex: 1;
         min-width: 0;
         padding: 5px 4px;
@@ -150,16 +198,6 @@
       width: 100%;
     }
 
-    /* 초록색 시작점 마커 스타일 */
-    .start-marker {
-      width: 22px;
-      height: 22px;
-      background: #2ed573;
-      border: 3px solid #ffffff;
-      border-radius: 50%;
-      box-shadow: 0 0 10px rgba(46, 213, 115, 0.8);
-    }
-
     .maplibregl-popup-content {
       background: rgba(15, 17, 21, 0.95);
       color: #fff;
@@ -195,6 +233,14 @@
       <select id="sigungu-select" class="filter-select" disabled>
         <option value="ALL">3: 시·군·구 (City/Dist.)</option>
       </select>
+
+      <!-- 연도별 다중 선택 체크박스 필터 메뉴 -->
+      <div class="dropdown-multiselect" id="year-dropdown-container">
+        <button class="dropdown-btn" type="button" onclick="toggleYearDropdown()">📅 연도별 (Years) ▼</button>
+        <div class="dropdown-content" id="year-checkboxes">
+          <!-- JS 동적 생성 -->
+        </div>
+      </div>
     </div>
     <div id="map"></div>
   </div>
@@ -207,9 +253,10 @@
   let activeLine = null;
   let activeLineId = null;
   let hoveredLineId = null;
-  let startMarker = null;
   let rawGeojsonData = null;
   let adminHierarchy = {};
+  let availableYears = new Set();
+  let selectedYears = new Set();
   let isSplitMode = false;
   let currentVideoId = null;
 
@@ -275,6 +322,24 @@
     return `${val} (${en})`;
   }
 
+  function extractYear(feature) {
+    const props = feature.properties || {};
+    const text = (props.name || "") + " " + (props.Name || "") + " " + (props.description || "") + " " + (props.Description || "");
+    const match = text.match(/\b(20\d{2})\b/);
+    return match ? match[1] : null;
+  }
+
+  function toggleYearDropdown() {
+    document.getElementById('year-checkboxes').classList.toggle('show');
+  }
+
+  // 외부 클릭 시 연도 드롭다운 닫기
+  window.addEventListener('click', (e) => {
+    if (!document.getElementById('year-dropdown-container').contains(e.target)) {
+      document.getElementById('year-checkboxes').classList.remove('show');
+    }
+  });
+
   function onYouTubeIframeAPIReady() {
     player = new YT.Player('yt-player', {
       height: '100%',
@@ -332,28 +397,11 @@
 
   map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
 
-  // 초록색 시작점 마커만 생성
-  const startEl = document.createElement('div');
-  startEl.className = 'start-marker';
-  startMarker = new maplibregl.Marker({ element: startEl, anchor: 'center' });
-
   function extractYouTubeId(url) {
     if (!url) return null;
     const regExp = /(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/;
     const match = url.match(regExp);
     return match ? match[1] : null;
-  }
-
-  function getCleanedCoords(feature) {
-    const raw = turf.coordAll(feature);
-    const cleaned = [];
-    for (let i = 0; i < raw.length; i++) {
-      const p = raw[i];
-      if (p && !isNaN(p[0]) && !isNaN(p[1])) {
-        cleaned.push([p[0], p[1]]);
-      }
-    }
-    return cleaned;
   }
 
   function zoomToActiveLine() {
@@ -404,6 +452,11 @@
       }
     }
   }
+
+  const countrySelect = document.getElementById('country-select');
+  const sidoSelect = document.getElementById('sido-select');
+  const sigunguSelect = document.getElementById('sigungu-select');
+  const yearCheckboxesContainer = document.getElementById('year-checkboxes');
 
   map.on('load', () => {
     Promise.all([
@@ -478,6 +531,9 @@
         const sidos = (p.sido || "").split(',').map(s => s.trim()).filter(Boolean);
         const sigs = (p.sigungu || "").split(',').map(s => s.trim()).filter(Boolean);
 
+        const yr = extractYear(f);
+        if (yr) availableYears.add(yr);
+
         if (!adminHierarchy[c]) adminHierarchy[c] = {};
         if (c === "대한민국") {
           sidos.forEach(sd => {
@@ -495,6 +551,17 @@
             }
           });
         }
+      });
+
+      // 연도 체크박스 UI 동적 생성 (최신순 정렬)
+      const sortedYears = Array.from(availableYears).sort((a, b) => b.localeCompare(a));
+      sortedYears.forEach(yr => {
+        selectedYears.add(yr); // 기본 전체 선택
+        yearCheckboxesContainer.innerHTML += `
+          <label class="year-checkbox-label">
+            <input type="checkbox" value="${yr}" checked onchange="onYearCheckboxChange(this)"> ${yr}년
+          </label>
+        `;
       });
 
       map.addSource('routes', {
@@ -541,6 +608,13 @@
       });
 
       buildDynamicFilters();
+
+      // [초기 설정] 대한민국 > 서울특별시 기본 선택
+      countrySelect.value = "대한민국";
+      countrySelect.dispatchEvent(new Event('change'));
+      
+      sidoSelect.value = "서울특별시";
+      sidoSelect.dispatchEvent(new Event('change'));
     });
 
     const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
@@ -570,7 +644,6 @@
       hoverPopup.remove();
     });
 
-    // 경로 클릭 시: 초록색 시작점 마커만 해당 선분의 첫 좌표에 표시
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
@@ -591,12 +664,6 @@
       document.getElementById('video-title').innerText = title;
 
       zoomToActiveLine();
-
-      // 시작점(첫 번째 좌표)에만 초록색 마커 표시
-      const coords = getCleanedCoords(activeLine);
-      if (coords.length > 0) {
-        startMarker.setLngLat(coords[0]).addTo(map);
-      }
 
       if (currentVideoId !== videoId) {
         currentVideoId = videoId;
@@ -619,15 +686,20 @@
     document.getElementById('player-panel').style.display = 'none';
     if (isSplitMode) toggleSplitMode();
     if (player && typeof player.stopVideo === 'function') player.stopVideo();
-    startMarker.remove();
     currentVideoId = null;
     updateActiveRouteHighlight(null);
     updateHoverHighlight(null);
   }
 
-  const countrySelect = document.getElementById('country-select');
-  const sidoSelect = document.getElementById('sido-select');
-  const sigunguSelect = document.getElementById('sigungu-select');
+  function onYearCheckboxChange(checkbox) {
+    const yr = checkbox.value;
+    if (checkbox.checked) {
+      selectedYears.add(yr);
+    } else {
+      selectedYears.delete(yr);
+    }
+    applyFilter();
+  }
 
   function buildDynamicFilters() {
     countrySelect.innerHTML = `<option value="ALL">${formatCountryLabel('ALL')}</option>`;
@@ -686,20 +758,31 @@
 
     const filteredFeatures = rawGeojsonData.features.filter(f => {
       const p = f.properties || {};
+      
+      // 1. 국가 필터
       if (c !== 'ALL' && p.country !== c) return false;
+      
+      // 2. 시도 필터
       if (c === '대한민국' && sd !== 'ALL') {
         const sidos = (p.sido || "").split(',').map(s => s.trim());
         if (!sidos.includes(sd)) return false;
       }
+      
+      // 3. 시군구 필터
       if (c === '대한민국' && sd !== 'ALL' && sgg !== 'ALL') {
         const sigs = (p.sigungu || "").split(',').map(s => s.trim());
         if (!sigs.includes(sgg)) return false;
       }
+
+      // 4. 연도 체크박스 다중 선택 필터
+      const yr = extractYear(f);
+      if (yr && !selectedYears.has(yr)) return false;
+
       return true;
     });
 
     const matchedIds = filteredFeatures.map(f => f.id);
-    if (c === 'ALL') {
+    if (c === 'ALL' && selectedYears.size === availableYears.size) {
       map.setFilter('routes-line', null);
     } else {
       map.setFilter('routes-line', ['in', ['id'], ['literal', matchedIds]]);
