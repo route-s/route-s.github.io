@@ -25,6 +25,7 @@
       position: absolute;
       top: 0; left: 0;
       transition: height 0.3s ease, top 0.3s ease;
+      cursor: default;
     }
 
     #filter-container {
@@ -76,6 +77,7 @@
       transition: all 0.3s ease;
     }
     #player-container { width: 100%; height: 215px; background: #000; position: relative; }
+    #player-container iframe { width: 100%; height: 100%; border: none; }
     #info-box { padding: 12px 16px; background: rgba(22, 25, 34, 0.98); }
     #video-title { font-size: 15px; font-weight: bold; margin-bottom: 4px; color: #00ffff; line-height: 1.3; }
     #video-guide { font-size: 11px; color: #888; }
@@ -91,7 +93,6 @@
     #close-btn { right: 8px; font-size: 16px; }
     #split-btn { right: 42px; font-size: 13px; }
 
-    /* 상하 분할 모드 (위 50% 영상 / 아래 50% 지도) */
     body.split-mode #player-panel {
       position: relative;
       top: 0; left: 0; right: 0;
@@ -116,19 +117,28 @@
       top: calc(50vh + 15px);
     }
 
-    /* 빨간색 제비꼬리 화살표 마커 */
+    /* 제비꼬리 화살표 마커 (중심 정렬 보정) */
     .arrow-marker {
-      width: 26px;
-      height: 26px;
+      width: 28px;
+      height: 28px;
+      pointer-events: none;
       display: flex;
       justify-content: center;
       align-items: center;
-      pointer-events: none;
     }
-    .arrow-marker svg {
+    .arrow-marker-inner {
       width: 100%;
       height: 100%;
-      filter: drop-shadow(0 0 5px rgba(255, 71, 87, 0.95)) drop-shadow(0 0 2px #000);
+      transform-origin: 50% 50%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      transition: transform 0.2s linear;
+    }
+    .arrow-marker-inner svg {
+      width: 24px;
+      height: 24px;
+      filter: drop-shadow(0 0 6px rgba(255, 71, 87, 0.95)) drop-shadow(0 0 2px #000);
     }
 
     .maplibregl-popup-content {
@@ -176,7 +186,7 @@
   let player = null;
   let activeLine = null;
   let trackingMarker = null;
-  let arrowEl = null;
+  let arrowInnerEl = null;
   let syncTimer = null;
   let rawGeojsonData = null;
   let adminHierarchy = {};
@@ -191,8 +201,13 @@
     });
   }
 
+  // 지도 인스턴스 (스크롤 줌, 드래그 줌 및 컨트롤 강제 활성화)
   const map = new maplibregl.Map({
     container: 'map',
+    scrollZoom: true,
+    boxZoom: true,
+    dragRotate: true,
+    dragPan: true,
     style: {
       version: 8,
       sources: {
@@ -208,24 +223,38 @@
         }
       },
       layers: [
-        { id: 'dark-base', type: 'raster', source: 'esri-dark-base', minzoom: 0, maxzoom: 16 },
-        { id: 'dark-ref', type: 'raster', source: 'esri-dark-reference', minzoom: 0, maxzoom: 16 }
+        { id: 'dark-base', type: 'raster', source: 'esri-dark-base', minzoom: 0, maxzoom: 18 },
+        { id: 'dark-ref', type: 'raster', source: 'esri-dark-reference', minzoom: 0, maxzoom: 18 }
       ]
     },
     center: [126.9780, 37.5665],
     zoom: 11
   });
 
-  arrowEl = document.createElement('div');
-  arrowEl.className = 'arrow-marker';
-  arrowEl.innerHTML = `
+  // 줌/회전 컨트롤 버튼 추가
+  map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
+
+  // 제비꼬리 화살표 마커 생성 (중심축 고정)
+  const markerWrapper = document.createElement('div');
+  markerWrapper.className = 'arrow-marker';
+  arrowInnerEl = document.createElement('div');
+  arrowInnerEl.className = 'arrow-marker-inner';
+  arrowInnerEl.innerHTML = `
     <svg viewBox="0 0 24 24" fill="none">
       <path d="M12 2L21 21L12 16.5L3 21L12 2Z" fill="#ff4757" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
     </svg>
   `;
-  trackingMarker = new maplibregl.Marker({ element: arrowEl, rotationAlignment: 'map' });
+  markerWrapper.appendChild(arrowInnerEl);
+  trackingMarker = new maplibregl.Marker({ element: markerWrapper, anchor: 'center' });
 
-  // MultiLineString을 단일 LineString으로 안전 변환
+  // 유튜브 비디오 ID 만능 추출 정규식
+  function extractYouTubeId(url) {
+    if (!url) return null;
+    const regExp = /(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/;
+    const match = url.match(regExp);
+    return match ? match[1] : null;
+  }
+
   function getSafeLine(feature) {
     if (feature.geometry.type === 'LineString') return feature;
     return turf.lineString(turf.coordAll(feature), feature.properties);
@@ -246,7 +275,7 @@
       }
 
       trackingMarker.setLngLat(currentPos.geometry.coordinates);
-      trackingMarker.setRotation(bearing);
+      arrowInnerEl.style.transform = `rotate(${bearing}deg)`;
     } catch(e) {}
   }
 
@@ -279,7 +308,6 @@
       .then(data => {
         rawGeojsonData = data;
 
-        // 파이썬이 미리 계산해 둔 속성 파싱 (0.01초 소요)
         rawGeojsonData.features.forEach((f, idx) => {
           f.id = idx;
           const p = f.properties || {};
@@ -337,18 +365,15 @@
       hoverPopup.remove();
     });
 
-    // 경로 클릭: 줌인 + 해당 구간 재생 + 회전 제비꼬리 화살표 배치
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       const props = activeLine.properties || {};
       const title = props.name || props.Name || '도보 코스';
       const rawDesc = props.description || props.Description || '';
 
-      const match = rawDesc.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/);
-      const videoId = match ? match[1] : null;
-
+      const videoId = extractYouTubeId(rawDesc);
       if (!videoId) {
-        alert("이 코스에 연결된 유튜브 링크를 찾을 수 없습니다.");
+        alert("이 코스에 연결된 유튜브 링크를 추출할 수 없습니다.\n내용: " + rawDesc);
         return;
       }
 
@@ -359,6 +384,9 @@
 
       if (player && typeof player.loadVideoById === 'function') {
         player.loadVideoById(videoId);
+      } else {
+        document.getElementById('player-container').innerHTML = 
+          `<iframe id="yt-player" src="https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
       }
 
       try {
@@ -380,9 +408,7 @@
 
         trackingMarker.addTo(map);
         updateMarkerPosition(curLen, totalLen, safeLine);
-      } catch(err) {
-        console.warn("Click sync error:", err);
-      }
+      } catch(err) {}
     });
   });
 
