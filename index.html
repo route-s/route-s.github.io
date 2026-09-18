@@ -210,6 +210,7 @@
 <script>
   let player = null;
   let activeLine = null;
+  let activeLineId = null;
   let trackingMarker = null;
   let arrowSvg = null;
   let syncTimer = null;
@@ -353,7 +354,6 @@
     return match ? match[1] : null;
   }
 
-  // 선분의 기존 점 연결 순서를 100% 보존하는 정규화
   function getNaturalOrderedCoords(feature) {
     const coords = turf.coordAll(feature);
     const cleaned = [];
@@ -368,7 +368,6 @@
     return cleaned;
   }
 
-  // 두 위경도 사이의 Haversine 거리 (단위: km)
   function calcDistKm(c1, c2) {
     const R = 6371;
     const dLat = (c2[1] - c1[1]) * Math.PI / 180;
@@ -379,7 +378,6 @@
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   }
 
-  /* ================= [핵심] 배열 순서 그대로 누적 거리 및 클릭 위치 비율 연산 ================= */
   function findSequentialPosition(coords, clickLngLat) {
     if (!coords || coords.length < 2) return { ratio: 0, snappedCoord: clickLngLat, bearing: 0 };
 
@@ -393,7 +391,6 @@
 
     if (totalLength === 0) return { ratio: 0, snappedCoord: coords[0], bearing: 0 };
 
-    // 클릭 지점과 가장 가까운 선분 조각(Segment)을 찾음
     let minDistanceToSegment = Infinity;
     let bestSegIdx = 0;
     let bestSegT = 0;
@@ -413,7 +410,7 @@
       let t = 0;
       if (lenSq > 0) {
         t = ((px - p1[0]) * dx + (py - p1[1]) * dy) / lenSq;
-        t = Math.max(0, Math.min(1, t)); // 선분 내부로 제한
+        t = Math.max(0, Math.min(1, t));
       }
 
       const snapX = p1[0] + t * dx;
@@ -428,7 +425,6 @@
       }
     }
 
-    // 0번 점부터 해당 세그먼트 직전까지 순수 누적 합산 + 세그먼트 내부 거리
     let accumulatedDist = 0;
     for (let i = 0; i < bestSegIdx; i++) {
       accumulatedDist += segLengths[i];
@@ -436,8 +432,6 @@
     accumulatedDist += segLengths[bestSegIdx] * bestSegT;
 
     const finalRatio = Math.max(0, Math.min(1, accumulatedDist / totalLength));
-
-    // 진행 방향 베어링 계산
     const bearing = turf.bearing(turf.point(coords[bestSegIdx]), turf.point(coords[bestSegIdx + 1]));
 
     return {
@@ -448,7 +442,6 @@
     };
   }
 
-  // 비율(0~1)에 해당하는 위치와 방향을 순차 배열 기반으로 도출
   function getCoordAlongSequence(coords, ratio) {
     if (!coords || coords.length < 2) return null;
     let totalLength = 0;
@@ -508,10 +501,22 @@
     }, 250);
   }
 
-  function scheduleSeek(targetRatio) {
+  // 선택된 루트 하이라이트 갱신 함수
+  function updateActiveRouteHighlight(featureId) {
+    if (map.getLayer('routes-active-line')) {
+      if (featureId !== null && featureId !== undefined) {
+        map.setFilter('routes-active-line', ['==', ['id'], featureId]);
+      } else {
+        map.setFilter('routes-active-line', ['==', ['id'], -9999]);
+      }
+    }
+  }
+
+  // 00:00 리셋을 완벽 차단하는 정밀 Seek 스케줄러
+  function executePreciseSeek(targetRatio) {
     if (targetRatio === null || targetRatio === undefined) return;
     pendingSeekRatio = targetRatio;
-    
+
     clearInterval(seekCheckInterval);
 
     let attempts = 0;
@@ -520,6 +525,7 @@
       if (!player || typeof player.getDuration !== 'function') return;
 
       const dur = player.getDuration();
+      // 영상 길이가 0초보다 크고 재생 준비가 되었을 때만 정확히 1회 점프
       if (dur && dur > 0) {
         const targetSeconds = dur * pendingSeekRatio;
         player.seekTo(targetSeconds, true);
@@ -527,7 +533,7 @@
         pendingSeekRatio = null;
       }
 
-      if (attempts > 100) {
+      if (attempts > 80) { // 8초 이상 경과 시 종료
         clearInterval(seekCheckInterval);
       }
     }, 100);
@@ -626,6 +632,7 @@
         data: rawGeojsonData
       });
 
+      // (1) 일반 코스 라인: 은은한 기본 민트색
       map.addLayer({
         id: 'routes-line',
         type: 'line',
@@ -633,8 +640,22 @@
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
           'line-color': '#00ffff',
-          'line-width': 3.2,
-          'line-opacity': 0.95
+          'line-width': 2.6,
+          'line-opacity': 0.65
+        }
+      });
+
+      // (2) 선택된 코스 하이라이트 라인: 형광 옐로우골드로 두껍게 강조
+      map.addLayer({
+        id: 'routes-active-line',
+        type: 'line',
+        source: 'routes',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        filter: ['==', ['id'], -9999], // 초기에는 아무것도 안 뜸
+        paint: {
+          'line-color': '#ffe600',
+          'line-width': 5.5,
+          'line-opacity': 1.0
         }
       });
 
@@ -652,7 +673,7 @@
       } else if (props.country) {
         locTag = `<br><span style="color:#aaa; font-size:11px;">[${props.country}]</span>`;
       }
-      hoverPopup.setLngLat(e.lngLat).setHTML(`<strong>${title}</strong>${locTag}<br><span style="color:#00ffff;">클릭하여 영상 시청</span>`).addTo(map);
+      hoverPopup.setLngLat(e.lngLat).setHTML(`<strong>${title}</strong>${locTag}<br><span style="color:#ffe600;">클릭하여 영상 시청</span>`).addTo(map);
     });
 
     map.on('mouseleave', 'routes-line', () => {
@@ -660,9 +681,10 @@
       hoverPopup.remove();
     });
 
-    // 코스 클릭 이벤트: 배열 순서 그대로의 누적 거리를 계산하여 영상 시간 완벽 동기화
+    // 코스 클릭 이벤트
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
+      activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
       const props = activeLine.properties || {};
       const title = props.name || props.Name || '도보 코스';
       const rawDesc = props.description || props.Description || '';
@@ -673,6 +695,9 @@
         return;
       }
 
+      // [선택 부각] 클릭된 코스를 굵고 선명한 형광 옐로우골드로 즉시 하이라이트
+      updateActiveRouteHighlight(activeLineId);
+
       document.getElementById('player-panel').style.display = 'flex';
       document.getElementById('video-title').innerText = title;
 
@@ -681,12 +706,13 @@
       const orderedCoords = getNaturalOrderedCoords(activeLine);
       const clickedLngLat = [e.lngLat.lng, e.lngLat.lat];
 
-      // 선분의 점 배열 순서 그대로 누적 거리와 정확한 클릭 지점 비율 도출
+      // 클릭 지점 비율 도출
       const pos = findSequentialPosition(orderedCoords, clickedLngLat);
 
       trackingMarker.setLngLat(pos.snappedCoord).addTo(map);
       arrowSvg.style.transform = `rotate(${pos.bearing}deg)`;
 
+      // [핵심] 00:00 리셋을 원천 방지하는 재생 명령 분기
       if (currentVideoId !== videoId) {
         currentVideoId = videoId;
         if (player && typeof player.loadVideoById === 'function') {
@@ -695,35 +721,46 @@
           document.getElementById('player-container').innerHTML = 
             `<iframe id="yt-player" src="https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
         }
+        executePreciseSeek(pos.ratio);
+      } else {
+        // 이미 같은 영상을 시청 중일 때는 즉각 시간 점프
+        if (player && typeof player.getDuration === 'function') {
+          const dur = player.getDuration();
+          if (dur > 0) {
+            player.seekTo(dur * pos.ratio, true);
+          } else {
+            executePreciseSeek(pos.ratio);
+          }
+        }
       }
-
-      scheduleSeek(pos.ratio);
     });
   });
 
   function onPlayerStateChange(event) {
     clearInterval(syncTimer);
 
-    if (event.data === YT.PlayerState.PLAYING && pendingSeekRatio !== null) {
-      scheduleSeek(pendingSeekRatio);
-    }
+    if (event.data === YT.PlayerState.PLAYING) {
+      if (pendingSeekRatio !== null) {
+        executePreciseSeek(pendingSeekRatio);
+      }
 
-    if (event.data === YT.PlayerState.PLAYING && activeLine) {
-      syncTimer = setInterval(() => {
-        if (!player || typeof player.getCurrentTime !== 'function') return;
-        const curTime = player.getCurrentTime();
-        const dur = player.getDuration();
-        if (!dur || dur === 0) return;
+      if (activeLine) {
+        syncTimer = setInterval(() => {
+          if (!player || typeof player.getCurrentTime !== 'function') return;
+          const curTime = player.getCurrentTime();
+          const dur = player.getDuration();
+          if (!dur || dur === 0) return;
 
-        const orderedCoords = getNaturalOrderedCoords(activeLine);
-        const progress = curTime / dur;
-        const currentLoc = getCoordAlongSequence(orderedCoords, progress);
+          const orderedCoords = getNaturalOrderedCoords(activeLine);
+          const progress = curTime / dur;
+          const currentLoc = getCoordAlongSequence(orderedCoords, progress);
 
-        if (currentLoc) {
-          trackingMarker.setLngLat(currentLoc.coord);
-          arrowSvg.style.transform = `rotate(${currentLoc.bearing}deg)`;
-        }
-      }, 300);
+          if (currentLoc) {
+            trackingMarker.setLngLat(currentLoc.coord);
+            arrowSvg.style.transform = `rotate(${currentLoc.bearing}deg)`;
+          }
+        }, 300);
+      }
     }
   }
 
@@ -736,6 +773,9 @@
     trackingMarker.remove();
     pendingSeekRatio = null;
     currentVideoId = null;
+
+    // 하이라이트 해제
+    updateActiveRouteHighlight(null);
   }
 
   const countrySelect = document.getElementById('country-select');
@@ -819,6 +859,7 @@
       map.setFilter('routes-line', ['in', ['id'], ['literal', matchedIds]]);
     }
 
+    /* 단계별 행정경계 표출 */
     if (map.getLayer('boundary-country-line')) {
       if (c === 'ALL') {
         map.setLayoutProperty('boundary-country-line', 'visibility', 'visible');
