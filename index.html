@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>ROUTE S - 아카이브 지도</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
@@ -34,39 +34,62 @@
       top: 0; left: 0;
     }
 
-    /* OSM 기본 타일을 API 키 없는 고대비 다크모드로 반전 */
     .maplibregl-canvas-container {
       background-color: #1a1a1a;
     }
 
+    /* 3단 드롭다운 필터 컨테이너 */
     #filter-container {
       position: absolute;
       top: 15px;
       left: 15px;
       z-index: 100;
       background: rgba(18, 20, 26, 0.92);
-      padding: 10px 14px;
+      padding: 8px 12px;
       border-radius: 10px;
       box-shadow: 0 4px 20px rgba(0,0,0,0.6);
       border: 1px solid rgba(255,255,255,0.15);
       display: flex;
-      gap: 8px;
+      gap: 6px;
       align-items: center;
       backdrop-filter: blur(8px);
+      max-width: calc(100vw - 30px);
     }
+
     .filter-select {
       background: #252836;
       color: #fff;
       border: 1px solid rgba(255,255,255,0.2);
       border-radius: 6px;
-      padding: 6px 10px;
-      font-size: 13px;
+      padding: 6px 8px;
+      font-size: 12.5px;
       outline: none;
       cursor: pointer;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      overflow: hidden;
     }
     .filter-select:disabled {
       opacity: 0.35;
       cursor: not-allowed;
+    }
+
+    /* 스마트폰 반응형 */
+    @media (max-width: 640px) {
+      #filter-container {
+        top: 10px;
+        left: 10px;
+        right: 10px;
+        width: calc(100% - 20px);
+        padding: 6px 8px;
+        gap: 4px;
+      }
+      .filter-select {
+        flex: 1;
+        min-width: 0;
+        padding: 5px 4px;
+        font-size: 11px;
+      }
     }
 
     #player-panel {
@@ -89,7 +112,7 @@
     #player-container { width: 100%; height: 215px; background: #000; position: relative; }
     #player-container iframe { width: 100%; height: 100%; border: none; }
     #info-box { padding: 12px 16px; background: rgba(22, 25, 34, 0.98); }
-    #video-title { font-size: 15px; font-weight: bold; margin-bottom: 4px; color: #00ffff; line-height: 1.3; }
+    #video-title { font-size: 14.5px; font-weight: bold; margin-bottom: 4px; color: #00ffff; line-height: 1.3; }
     #video-guide { font-size: 11px; color: #888; }
 
     .panel-btn {
@@ -173,13 +196,13 @@
   <div id="map-wrapper">
     <div id="filter-container">
       <select id="country-select" class="filter-select">
-        <option value="ALL">1단계: 국가 전체</option>
+        <option value="ALL">1: 국가 전체 (All)</option>
       </select>
       <select id="sido-select" class="filter-select" disabled>
-        <option value="ALL">2단계: 시·도 전체</option>
+        <option value="ALL">2: 시·도 (State)</option>
       </select>
       <select id="sigungu-select" class="filter-select" disabled>
-        <option value="ALL">3단계: 시·군·구 전체</option>
+        <option value="ALL">3: 시·군·구 (City/Dist.)</option>
       </select>
     </div>
     <div id="map"></div>
@@ -200,6 +223,67 @@
   let currentVideoId = null;
   let pendingSeekRatio = null;
 
+  /* ================= 한영 표기 매핑 사전 ================= */
+  const COUNTRY_EN_MAP = {
+    "대한민국": "Korea",
+    "일본": "Japan",
+    "싱가포르": "Singapore",
+    "남아프리카공화국": "RSA",
+    "대만": "Taiwan",
+    "미국": "USA"
+  };
+
+  const SIDO_EN_MAP = {
+    "서울특별시": "Seoul", "부산광역시": "Busan", "대구광역시": "Daegu", "인천광역시": "Incheon",
+    "광주광역시": "Gwangju", "대전광역시": "Daejeon", "울산광역시": "Ulsan", "세종특별자치시": "Sejong",
+    "경기도": "Gyeonggi", "강원특별자치도": "Gangwon", "충청북도": "Chungbuk", "충청남도": "Chungnam",
+    "전북특별자치도": "Jeonbuk", "전라남도": "Jeonnam", "경상북도": "Gyeongbuk", "경상남도": "Gyeongnam",
+    "제주특별자치도": "Jeju"
+  };
+
+  const KOR_SIDO_CODE_MAP = {
+    "11": "서울특별시", "21": "부산광역시", "22": "대구광역시", "23": "인천광역시",
+    "24": "광주광역시", "25": "대전광역시", "26": "울산광역시", "29": "세종특별자치시",
+    "31": "경기도", "32": "강원특별자치도", "33": "충청북도", "34": "충청남도",
+    "35": "전북특별자치도", "36": "전라남도", "37": "경상북도", "38": "경상남도", "39": "제주특별자치도"
+  };
+
+  const DISTRICT_EN_MAP = {
+    "종로구": "Jongno-gu", "중구": "Jung-gu", "용산구": "Yongsan-gu", "성동구": "Seongdong-gu",
+    "광진구": "Gwangjin-gu", "동대문구": "Dongdaemun-gu", "중랑구": "Jungnang-gu", "성북구": "Seongbuk-gu",
+    "강북구": "Gangbuk-gu", "도봉구": "Dobong-gu", "노원구": "Nowon-gu", "은평구": "Eunpyeong-gu",
+    "서대문구": "Seodaemun-gu", "마포구": "Mapo-gu", "양천구": "Yangcheon-gu", "강서구": "Gangseo-gu",
+    "구로구": "Guro-gu", "금천구": "Geumcheon-gu", "영등포구": "Yeongdeungpo-gu", "동작구": "Dongjak-gu",
+    "관악구": "Gwanak-gu", "서초구": "Seocho-gu", "강남구": "Gangnam-gu", "송파구": "Songpa-gu",
+    "강동구": "Gangdong-gu", "고양시덕양구": "Goyang Deogyang", "고양시일산동구": "Ilsandong-gu",
+    "고양시일산서구": "Ilsanseo-gu", "성남시분당구": "Bundang-gu", "수원시팔달구": "Paldal-gu",
+    "제주시": "Jeju-si", "서귀포시": "Seogwipo-si"
+  };
+
+  function formatCountryLabel(val) {
+    if (val === "ALL") return "1: 국가 전체 (All)";
+    const en = COUNTRY_EN_MAP[val] || val;
+    return `${val} (${en})`;
+  }
+
+  function formatSidoLabel(val) {
+    if (val === "ALL") return "2: 시·도 (State)";
+    const en = SIDO_EN_MAP[val] || val;
+    return `${val} (${en})`;
+  }
+
+  function formatSigunguLabel(val) {
+    if (val === "ALL") return "3: 시·군·구 (City/Dist.)";
+    let en = DISTRICT_EN_MAP[val];
+    if (!en) {
+      if (val.endsWith('구')) en = val.replace('구', '-gu');
+      else if (val.endsWith('시')) en = val.replace('시', '-si');
+      else if (val.endsWith('군')) en = val.replace('군', '-gun');
+      else en = val;
+    }
+    return `${val} (${en})`;
+  }
+
   function onYouTubeIframeAPIReady() {
     player = new YT.Player('yt-player', {
       height: '100%',
@@ -218,7 +302,6 @@
     });
   }
 
-  // 순수 공식 OSM 타일 + 다크 래스터 튜닝 (API 키 불필요, 줌 19까지 무제한)
   const map = new maplibregl.Map({
     container: 'map',
     scrollZoom: true,
@@ -316,11 +399,15 @@
     if (!activeLine) return;
     try {
       const lineBbox = turf.bbox(activeLine);
-      if (isSplitMode) {
-        map.fitBounds(lineBbox, { padding: 60, maxZoom: 16.5, duration: 600 });
-      } else {
-        map.fitBounds(lineBbox, { padding: { top: 60, bottom: 60, left: 60, right: 410 }, maxZoom: 16.5, duration: 600 });
-      }
+      const isMobile = window.innerWidth <= 640;
+      const pad = isMobile ? 30 : 60;
+      const rightPad = (isSplitMode || isMobile) ? pad : 410;
+
+      map.fitBounds(lineBbox, {
+        padding: { top: pad, bottom: pad, left: pad, right: rightPad },
+        maxZoom: 16.5,
+        duration: 600
+      });
     } catch(err) {}
   }
 
@@ -349,49 +436,114 @@
   }
 
   map.on('load', () => {
-    fetch('./routes.geojson')
-      .then(res => res.json())
-      .then(data => {
-        rawGeojsonData = data;
+    // 코스 데이터 및 3단계 행정경계 데이터 비동기 병렬 로드
+    Promise.all([
+      fetch('./routes.geojson').then(r => r.json()),
+      fetch('https://d2ad6b4ur7yvpq.cloudfront.net/naturalearth-3.3.0/ne_110m_admin_0_countries.geojson').then(r => r.json()),
+      fetch('https://raw.githubusercontent.com/southkorea/southkorea-maps/master/kostat/2018/json/skorea-provinces-2018-geo.json').then(r => r.json()),
+      fetch('https://raw.githubusercontent.com/southkorea/southkorea-maps/master/kostat/2018/json/skorea-municipalities-2018-geo.json').then(r => r.json())
+    ]).then(([routesData, worldGeo, sidoGeo, sigunguGeo]) => {
+      rawGeojsonData = routesData;
 
-        rawGeojsonData.features.forEach((f, idx) => {
-          f.id = idx;
-          const p = f.properties || {};
-          const c = p.country || "대한민국";
-          const sidos = (p.sido || "").split(',').map(s => s.trim()).filter(Boolean);
-          const sigs = (p.sigungu || "").split(',').map(s => s.trim()).filter(Boolean);
-
-          if (!adminHierarchy[c]) adminHierarchy[c] = {};
-          if (c === "대한민국") {
-            sidos.forEach(sd => {
-              if (sd !== "-" && sd !== "") {
-                if (!adminHierarchy[c][sd]) adminHierarchy[c][sd] = new Set();
-                sigs.forEach(sg => { if (sg !== "-" && sg !== "") adminHierarchy[c][sd].add(sg); });
-              }
-            });
-          }
-        });
-
-        map.addSource('routes', {
-          type: 'geojson',
-          data: rawGeojsonData
-        });
-
-        // 어두운 OSM 배경 위에서 형광 민트색 라인이 선명하게 보이도록 두께 및 발광 설정
-        map.addLayer({
-          id: 'routes-line',
-          type: 'line',
-          source: 'routes',
-          layout: { 'line-join': 'round', 'line-cap': 'round' },
-          paint: {
-            'line-color': '#00ffff',
-            'line-width': 3.2,
-            'line-opacity': 0.95
-          }
-        });
-
-        buildDynamicFilters();
+      // 1. 세계 국경선 소스 및 레이어 (기본: 표시)
+      map.addSource('boundary-country-source', { type: 'geojson', data: worldGeo });
+      map.addLayer({
+        id: 'boundary-country-line',
+        type: 'line',
+        source: 'boundary-country-source',
+        layout: { 'visibility': 'visible' },
+        paint: {
+          'line-color': '#ffffff',
+          'line-width': 1.2,
+          'line-opacity': 0.35,
+          'line-dasharray': [3, 2]
+        }
       });
+
+      // 2. 대한민국 시도 경계선 소스 및 레이어 (기본: 숨김)
+      map.addSource('boundary-sido-source', { type: 'geojson', data: sidoGeo });
+      map.addLayer({
+        id: 'boundary-sido-line',
+        type: 'line',
+        source: 'boundary-sido-source',
+        layout: { 'visibility': 'none' },
+        paint: {
+          'line-color': '#a4b0be',
+          'line-width': 1.8,
+          'line-opacity': 0.65
+        }
+      });
+
+      // 3. 대한민국 시군구 경계선 전처리 및 소스/레이어 (기본: 숨김)
+      sigunguGeo.features.forEach(f => {
+        const prefix = String(f.properties.code || '').substring(0, 2);
+        f.properties._sido = KOR_SIDO_CODE_MAP[prefix] || "기타시도";
+      });
+
+      map.addSource('boundary-sigungu-source', { type: 'geojson', data: sigunguGeo });
+      map.addLayer({
+        id: 'boundary-sigungu-line',
+        type: 'line',
+        source: 'boundary-sigungu-source',
+        layout: { 'visibility': 'none' },
+        paint: {
+          'line-color': '#dfe4ea',
+          'line-width': 1.1,
+          'line-opacity': 0.5,
+          'line-dasharray': [2, 2]
+        }
+      });
+
+      // 시군구 옅은 채우기(폴리곤) 레이어
+      map.addLayer({
+        id: 'boundary-sigungu-fill',
+        type: 'fill',
+        source: 'boundary-sigungu-source',
+        layout: { 'visibility': 'none' },
+        paint: {
+          'fill-color': '#00ffff',
+          'fill-opacity': 0.04
+        }
+      });
+
+      // 4. 메인 도보 코스 레이어
+      rawGeojsonData.features.forEach((f, idx) => {
+        f.id = idx;
+        const p = f.properties || {};
+        const c = p.country || "대한민국";
+        const sidos = (p.sido || "").split(',').map(s => s.trim()).filter(Boolean);
+        const sigs = (p.sigungu || "").split(',').map(s => s.trim()).filter(Boolean);
+
+        if (!adminHierarchy[c]) adminHierarchy[c] = {};
+        if (c === "대한민국") {
+          sidos.forEach(sd => {
+            if (sd !== "-" && sd !== "") {
+              if (!adminHierarchy[c][sd]) adminHierarchy[c][sd] = new Set();
+              sigs.forEach(sg => { if (sg !== "-" && sg !== "") adminHierarchy[c][sd].add(sg); });
+            }
+          });
+        }
+      });
+
+      map.addSource('routes', {
+        type: 'geojson',
+        data: rawGeojsonData
+      });
+
+      map.addLayer({
+        id: 'routes-line',
+        type: 'line',
+        source: 'routes',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#00ffff',
+          'line-width': 3.2,
+          'line-opacity': 0.95
+        }
+      });
+
+      buildDynamicFilters();
+    });
 
     const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
     map.on('mouseenter', 'routes-line', (e) => {
@@ -436,7 +588,6 @@
       const snapped = turf.nearestPointOnLine(safeLine, turf.point(clickedLngLat));
       const exactPos = snapped.geometry.coordinates;
 
-      // 마커를 클릭한 위치로 즉시 정확하게 고정
       trackingMarker.setLngLat(exactPos).addTo(map);
 
       const totalLen = turf.length(safeLine, { units: 'kilometers' });
@@ -506,7 +657,7 @@
   const sigunguSelect = document.getElementById('sigungu-select');
 
   function buildDynamicFilters() {
-    countrySelect.innerHTML = '<option value="ALL">1단계: 국가 전체</option>';
+    countrySelect.innerHTML = `<option value="ALL">${formatCountryLabel('ALL')}</option>`;
 
     const countries = Object.keys(adminHierarchy).sort((a, b) => {
       if (a === '대한민국') return -1;
@@ -515,18 +666,18 @@
     });
 
     countries.forEach(country => {
-      countrySelect.innerHTML += `<option value="${country}">${country}</option>`;
+      countrySelect.innerHTML += `<option value="${country}">${formatCountryLabel(country)}</option>`;
     });
 
     countrySelect.addEventListener('change', () => {
       const c = countrySelect.value;
-      sidoSelect.innerHTML = '<option value="ALL">2단계: 시·도 전체</option>';
-      sigunguSelect.innerHTML = '<option value="ALL">3단계: 시·군·구 전체</option>';
+      sidoSelect.innerHTML = `<option value="ALL">${formatSidoLabel('ALL')}</option>`;
+      sigunguSelect.innerHTML = `<option value="ALL">${formatSigunguLabel('ALL')}</option>`;
 
       if (c === '대한민국' && adminHierarchy[c]) {
         sidoSelect.disabled = false;
         Object.keys(adminHierarchy[c]).sort().forEach(sido => {
-          sidoSelect.innerHTML += `<option value="${sido}">${sido}</option>`;
+          sidoSelect.innerHTML += `<option value="${sido}">${formatSidoLabel(sido)}</option>`;
         });
         sigunguSelect.disabled = true;
       } else {
@@ -539,12 +690,12 @@
     sidoSelect.addEventListener('change', () => {
       const c = countrySelect.value;
       const s = sidoSelect.value;
-      sigunguSelect.innerHTML = '<option value="ALL">3단계: 시·군·구 전체</option>';
+      sigunguSelect.innerHTML = `<option value="ALL">${formatSigunguLabel('ALL')}</option>`;
 
       if (c === '대한민국' && s !== 'ALL' && adminHierarchy[c] && adminHierarchy[c][s]) {
         sigunguSelect.disabled = false;
         Array.from(adminHierarchy[c][s]).sort().forEach(sig => {
-          sigunguSelect.innerHTML += `<option value="${sig}">${sig}</option>`;
+          sigunguSelect.innerHTML += `<option value="${sig}">${formatSigunguLabel(sig)}</option>`;
         });
       } else {
         sigunguSelect.disabled = true;
@@ -555,11 +706,13 @@
     sigunguSelect.addEventListener('change', applyFilter);
   }
 
+  // 선택 상태에 따른 코스 및 단계별 행정경계 레이어 제어
   function applyFilter() {
     const c = countrySelect.value;
     const sd = sidoSelect.value;
     const sgg = sigunguSelect.value;
 
+    /* 1. 코스 필터링 */
     const filteredFeatures = rawGeojsonData.features.filter(f => {
       const p = f.properties || {};
       if (c !== 'ALL' && p.country !== c) return false;
@@ -581,11 +734,55 @@
       map.setFilter('routes-line', ['in', ['id'], ['literal', matchedIds]]);
     }
 
+    /* 2. 단계별 행정경계선 표시/숨김 제어 */
+    if (map.getLayer('boundary-country-line')) {
+      if (c === 'ALL') {
+        // [1단계]: 국경선만 표출
+        map.setLayoutProperty('boundary-country-line', 'visibility', 'visible');
+        map.setLayoutProperty('boundary-sido-line', 'visibility', 'none');
+        map.setLayoutProperty('boundary-sigungu-line', 'visibility', 'none');
+        map.setLayoutProperty('boundary-sigungu-fill', 'visibility', 'none');
+      } else if (c === '대한민국') {
+        // 대한민국 선택됨 -> 국경선 끄기
+        map.setLayoutProperty('boundary-country-line', 'visibility', 'none');
+
+        if (sd === 'ALL') {
+          // [2단계]: 시도 전체 단계 -> 시도 경계선 표출
+          map.setLayoutProperty('boundary-sido-line', 'visibility', 'visible');
+          map.setLayoutProperty('boundary-sigungu-line', 'visibility', 'none');
+          map.setLayoutProperty('boundary-sigungu-fill', 'visibility', 'none');
+        } else {
+          // [3단계]: 특정 시도(예: 서울, 경기 등) 선택됨 -> 시군구 경계선 표출
+          map.setLayoutProperty('boundary-sido-line', 'visibility', 'none');
+          map.setLayoutProperty('boundary-sigungu-line', 'visibility', 'visible');
+          map.setLayoutProperty('boundary-sigungu-fill', 'visibility', 'visible');
+
+          if (sgg === 'ALL') {
+            // 해당 시도 내 모든 시군구 표출
+            map.setFilter('boundary-sigungu-line', ['==', ['get', '_sido'], sd]);
+            map.setFilter('boundary-sigungu-fill', ['==', ['get', '_sido'], sd]);
+          } else {
+            // 특정 시군구 하나만 선택 시 해당 구만 하이라이트
+            map.setFilter('boundary-sigungu-line', ['==', ['get', 'name'], sgg]);
+            map.setFilter('boundary-sigungu-fill', ['==', ['get', 'name'], sgg]);
+          }
+        }
+      } else {
+        // 해외 국가 선택 시
+        map.setLayoutProperty('boundary-country-line', 'visibility', 'visible');
+        map.setLayoutProperty('boundary-sido-line', 'visibility', 'none');
+        map.setLayoutProperty('boundary-sigungu-line', 'visibility', 'none');
+        map.setLayoutProperty('boundary-sigungu-fill', 'visibility', 'none');
+      }
+    }
+
+    /* 3. 카메라 바운드 이동 */
     if (filteredFeatures.length > 0) {
       try {
         const fc = turf.featureCollection(filteredFeatures);
         const bbox = turf.bbox(fc);
-        map.fitBounds(bbox, { padding: 80, maxZoom: 15, duration: 800 });
+        const isMobile = window.innerWidth <= 640;
+        map.fitBounds(bbox, { padding: isMobile ? 40 : 80, maxZoom: 15, duration: 800 });
       } catch(e) {}
     }
   }
