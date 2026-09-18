@@ -283,7 +283,6 @@
       .then(data => {
         rawGeojsonData = data;
 
-        // 브라우저 실시간 공간 연산 완전 제거: routes.geojson의 사전 태깅된 속성만 파싱
         rawGeojsonData.features.forEach((f, idx) => {
           f.id = idx;
           const p = f.properties || {};
