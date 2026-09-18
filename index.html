@@ -4,17 +4,14 @@
   <meta charset="UTF-8">
   <title>ROUTE S - 아카이브 지도</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- MapLibre GL JS -->
   <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
-  <!-- Turf.js -->
   <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
 
   <style>
-    body { margin: 0; padding: 0; background: #0f1115; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { margin: 0; padding: 0; background: #000; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
     #map { position: absolute; top: 0; bottom: 0; width: 100%; }
 
-    /* 유튜브 플레이어 패널 */
     #player-panel {
       position: absolute;
       top: 15px;
@@ -42,7 +39,6 @@
       cursor: pointer; font-size: 16px; line-height: 28px; text-align: center; z-index: 101;
     }
 
-    /* 툴팁 */
     .maplibregl-popup-content {
       background: rgba(15, 17, 21, 0.95);
       color: #fff;
@@ -58,7 +54,6 @@
 
 <div id="map"></div>
 
-<!-- 유튜브 플로팅 재생창 -->
 <div id="player-panel">
   <button id="close-btn" onclick="closePlayer()">×</button>
   <div id="player-container"><div id="yt-player"></div></div>
@@ -85,31 +80,28 @@
     });
   }
 
-  // API 키가 전혀 필요 없는 완전 무료 고대비 다크 타일
+  // API 키가 필요 없는 Esri 다크 캔버스 타일 레이어
   const map = new maplibregl.Map({
     container: 'map',
     style: {
       version: 8,
       sources: {
-        'osm-dark': {
+        'esri-dark': {
           type: 'raster',
           tiles: [
-            'https://a.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}@2x.png',
-            'https://b.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}@2x.png',
-            'https://c.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}@2x.png',
-            'https://d.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}@2x.png'
+            'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}'
           ],
           tileSize: 256,
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+          attribution: '&copy; Esri, DeLorme, NAVTEQ'
         }
       },
       layers: [
         {
-          id: 'osm-dark-layer',
+          id: 'esri-dark-layer',
           type: 'raster',
-          source: 'osm-dark',
+          source: 'esri-dark',
           minzoom: 0,
-          maxzoom: 19
+          maxzoom: 16
         }
       ]
     },
@@ -132,26 +124,24 @@
       data: './routes.geojson'
     });
 
-    // 전체 경로 라인 (선명한 네온 시안 블루)
     map.addLayer({
       id: 'routes-line',
       type: 'line',
       source: 'routes',
       layout: { 'line-join': 'round', 'line-cap': 'round' },
       paint: {
-        'line-color': '#00d2d3',
+        'line-color': '#00ffff',
         'line-width': 2.8,
-        'line-opacity': 0.75
+        'line-opacity': 0.8
       }
     });
 
-    // 툴팁
     const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
     map.on('mouseenter', 'routes-line', (e) => {
       map.getCanvas().style.cursor = 'pointer';
       const props = e.features[0].properties;
       const title = props.name || props.Name || '도보 코스';
-      hoverPopup.setLngLat(e.lngLat).setHTML(`<strong>${title}</strong><br><span style="color:#00d2d3;">클릭하여 영상 시청</span>`).addTo(map);
+      hoverPopup.setLngLat(e.lngLat).setHTML(`<strong>${title}</strong><br><span style="color:#00ffff;">클릭하여 영상 시청</span>`).addTo(map);
     });
 
     map.on('mouseleave', 'routes-line', () => {
@@ -159,7 +149,6 @@
       hoverPopup.remove();
     });
 
-    // 코스 클릭: 영상 재생 및 위치 동기화
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       const props = activeLine.properties;
