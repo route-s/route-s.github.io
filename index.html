@@ -364,51 +364,20 @@
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   }
 
-  /* ================= [핵심] 점 편집 꼬임 완전 복원: 위상 사슬 정렬 ================= */
-  function reconstructPathTopology(rawCoords) {
-    if (!rawCoords || rawCoords.length <= 2) return rawCoords;
-
-    // 1. 유효 노드 추출 및 미세 중복 제거
-    const pts = [];
-    for (let i = 0; i < rawCoords.length; i++) {
-      const p = rawCoords[i];
-      if (p && !isNaN(p[0]) && !isNaN(p[1])) {
-        if (pts.length === 0 || calcDistKm(pts[pts.length - 1], p) > 0.0005) {
-          pts.push([p[0], p[1]]);
-        }
-      }
-    }
-    if (pts.length <= 2) return pts;
-
-    // 2. 출발점(0번 점)에서 시작하여 가장 인접한 이웃 점으로 단방향 사슬 추적
-    const unvisited = pts.slice(1);
-    const path = [pts[0]];
-
-    while (unvisited.length > 0) {
-      const current = path[path.length - 1];
-      let bestIdx = 0;
-      let minD = Infinity;
-
-      for (let i = 0; i < unvisited.length; i++) {
-        const d = calcDistKm(current, unvisited[i]);
-        if (d < minD) {
-          minD = d;
-          bestIdx = i;
-        }
-      }
-
-      path.push(unvisited.splice(bestIdx, 1)[0]);
-    }
-
-    return path;
-  }
-
+  // 화면에 렌더링된 원본 선분 그대로 추출 (임의 변형 배제)
   function getCleanedCoords(feature) {
     const raw = turf.coordAll(feature);
-    return reconstructPathTopology(raw);
+    const cleaned = [];
+    for (let i = 0; i < raw.length; i++) {
+      const p = raw[i];
+      if (p && !isNaN(p[0]) && !isNaN(p[1])) {
+        cleaned.push([p[0], p[1]]);
+      }
+    }
+    return cleaned;
   }
 
-  /* ================= 정밀 순차 누적 거리 연산 ================= */
+  /* ================= [화면 선분 100% 일치] 누적 거리 & 스냅 연산 ================= */
   function findSequentialPosition(coords, clickLngLat) {
     if (!coords || coords.length < 2) return { ratio: 0, snappedCoord: clickLngLat, bearing: 0 };
 
@@ -703,7 +672,6 @@
       hoverPopup.remove();
     });
 
-    // 코스 클릭 이벤트
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
@@ -724,7 +692,6 @@
 
       zoomToActiveLine();
 
-      // 위상 재정렬된 좌표계 획득
       const orderedCoords = getCleanedCoords(activeLine);
       const clickedLngLat = [e.lngLat.lng, e.lngLat.lat];
 
