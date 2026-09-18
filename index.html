@@ -9,9 +9,26 @@
   <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
 
   <style>
-    body { margin: 0; padding: 0; background: #000; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+    * { box-sizing: border-box; }
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 
+    /* 메인 앱 컨테이너 */
+    #app-container {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0; left: 0;
+      transition: height 0.3s ease, top 0.3s ease;
+    }
+
+    /* 좌측 상단 행정구역 3단 필터 바 */
     #filter-container {
       position: absolute;
       top: 15px;
@@ -42,6 +59,7 @@
       cursor: not-allowed;
     }
 
+    /* 유튜브 플레이어 패널 (기본: 우측 상단 플로팅 팝업) */
     #player-panel {
       position: absolute;
       top: 15px;
@@ -58,18 +76,52 @@
       z-index: 100;
       backdrop-filter: blur(10px);
       border: 1px solid rgba(255,255,255,0.12);
+      transition: all 0.3s ease;
     }
     #player-container { width: 100%; height: 215px; background: #000; position: relative; }
     #player-container iframe { width: 100%; height: 100%; border: none; }
-    #info-box { padding: 14px 16px; }
-    #video-title { font-size: 15px; font-weight: bold; margin-bottom: 6px; color: #00ffff; line-height: 1.3; }
+    #info-box { padding: 12px 16px; background: rgba(22, 25, 34, 0.98); }
+    #video-title { font-size: 15px; font-weight: bold; margin-bottom: 4px; color: #00ffff; line-height: 1.3; }
     #video-guide { font-size: 11px; color: #888; }
-    #close-btn {
-      position: absolute; top: 8px; right: 8px; background: rgba(0,0,0,0.6);
-      color: #fff; border: none; border-radius: 50%; width: 28px; height: 28px;
-      cursor: pointer; font-size: 16px; line-height: 28px; text-align: center; z-index: 101;
+
+    /* 패널 제어 버튼들 */
+    .panel-btn {
+      position: absolute; top: 8px; background: rgba(0,0,0,0.6);
+      color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px;
+      width: 28px; height: 28px; cursor: pointer; font-size: 14px;
+      display: flex; align-items: center; justify-content: center; z-index: 101;
+      transition: background 0.2s;
+    }
+    .panel-btn:hover { background: rgba(0,206,209,0.8); color: #000; }
+    #close-btn { right: 8px; font-size: 16px; }
+    #split-btn { right: 42px; font-size: 13px; }
+
+    /* === [상하 분할 모드 스타일] === */
+    body.split-mode #player-panel {
+      position: relative;
+      top: 0; left: 0; right: 0;
+      width: 100%;
+      max-width: 100%;
+      height: 50vh;
+      border-radius: 0;
+      border: none;
+      border-bottom: 2px solid #00ffff;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.9);
+      display: flex;
+    }
+    body.split-mode #player-container {
+      flex: 1;
+      height: calc(100% - 55px);
+    }
+    body.split-mode #map {
+      top: 50vh;
+      height: 50vh;
+    }
+    body.split-mode #filter-container {
+      top: calc(50vh + 15px);
     }
 
+    /* 제비꼬리 화살표 */
     .arrow-marker {
       width: 24px;
       height: 24px;
@@ -98,27 +150,33 @@
 </head>
 <body>
 
-<div id="filter-container">
-  <select id="country-select" class="filter-select">
-    <option value="ALL">1단계: 국가 전체</option>
-  </select>
-  <select id="sido-select" class="filter-select" disabled>
-    <option value="ALL">2단계: 시·도 전체</option>
-  </select>
-  <select id="sigungu-select" class="filter-select" disabled>
-    <option value="ALL">3단계: 시·군·구 전체</option>
-  </select>
-</div>
-
-<div id="map"></div>
-
-<div id="player-panel">
-  <button id="close-btn" onclick="closePlayer()">×</button>
-  <div id="player-container"><div id="yt-player"></div></div>
-  <div id="info-box">
-    <div id="video-title">코스 명칭</div>
-    <div id="video-guide">💡 지도 위 경로를 클릭하면 해당 위치 영상으로 즉시 이동합니다.</div>
+<div id="app-container">
+  <!-- 유튜브 플레이어 패널 -->
+  <div id="player-panel">
+    <button id="split-btn" class="panel-btn" onclick="toggleSplitMode()" title="화면 상하 분할 / 팝업 토글">◫</button>
+    <button id="close-btn" class="panel-btn" onclick="closePlayer()" title="닫기">×</button>
+    <div id="player-container"><div id="yt-player"></div></div>
+    <div id="info-box">
+      <div id="video-title">코스 명칭</div>
+      <div id="video-guide">💡 지도 위 경로를 클릭하면 해당 위치 영상으로 즉시 이동합니다.</div>
+    </div>
   </div>
+
+  <!-- 행정구역 3단 필터 -->
+  <div id="filter-container">
+    <select id="country-select" class="filter-select">
+      <option value="ALL">1단계: 국가 전체</option>
+    </select>
+    <select id="sido-select" class="filter-select" disabled>
+      <option value="ALL">2단계: 시·도 전체</option>
+    </select>
+    <select id="sigungu-select" class="filter-select" disabled>
+      <option value="ALL">3단계: 시·군·구 전체</option>
+    </select>
+  </div>
+
+  <!-- 지도 컨테이너 -->
+  <div id="map"></div>
 </div>
 
 <script src="https://www.youtube.com/iframe_api"></script>
@@ -132,6 +190,7 @@
   let rawGeojsonData = null;
   let adminHierarchy = {};
   let ytApiReady = false;
+  let isSplitMode = false;
 
   function onYouTubeIframeAPIReady() {
     ytApiReady = true;
@@ -194,9 +253,42 @@
 
       trackingMarker.setLngLat(currentPos.geometry.coordinates);
       trackingMarker.setRotation(bearing);
-    } catch(e) {
-      console.warn("Marker calculation skipped", e);
-    }
+    } catch(e) {}
+  }
+
+  // 선택된 코스로 최적 줌인하는 공통 헬퍼
+  function zoomToActiveLine() {
+    if (!activeLine) return;
+    try {
+      const lineBbox = turf.bbox(activeLine);
+      if (isSplitMode) {
+        // 상하 분할 시: 아래쪽 50% 지도 정중앙에 시원하게 맞춤
+        map.fitBounds(lineBbox, {
+          padding: { top: 60, bottom: 60, left: 60, right: 60 },
+          maxZoom: 15.5,
+          duration: 900
+        });
+      } else {
+        // 팝업 모드 시: 우측 플레이어 패널을 피해서 중심 배치
+        map.fitBounds(lineBbox, {
+          padding: { top: 70, bottom: 70, left: 70, right: 420 },
+          maxZoom: 15.5,
+          duration: 900
+        });
+      }
+    } catch(err) {}
+  }
+
+  // 상하 분할 모드 토글 함수
+  function toggleSplitMode() {
+    isSplitMode = !isSplitMode;
+    document.body.classList.toggle('split-mode', isSplitMode);
+    document.getElementById('split-btn').innerText = isSplitMode ? '❐' : '◫';
+
+    setTimeout(() => {
+      map.resize(); // 뷰포트 크기 변경 알림
+      zoomToActiveLine(); // 변경된 화면에 맞춰 코스 재정렬
+    }, 320);
   }
 
   map.on('load', () => {
@@ -205,7 +297,6 @@
       .then(data => {
         rawGeojsonData = data;
 
-        // 에러 없는 안전한 트리 파싱
         rawGeojsonData.features.forEach((f, idx) => {
           f.id = idx;
           const p = f.properties || {};
@@ -242,8 +333,7 @@
         });
 
         buildDynamicFilters();
-      })
-      .catch(err => console.error("GeoJSON load failed:", err));
+      });
 
     const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
     map.on('mouseenter', 'routes-line', (e) => {
@@ -264,6 +354,7 @@
       hoverPopup.remove();
     });
 
+    // 코스 클릭 시
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       const props = activeLine.properties || {};
@@ -278,20 +369,11 @@
         return;
       }
 
-      // 소축척 클릭 시 해당 경로로 스마트 줌인
-      try {
-        const lineBbox = turf.bbox(activeLine);
-        map.fitBounds(lineBbox, {
-          padding: { top: 70, bottom: 70, left: 70, right: 420 },
-          maxZoom: 15.5,
-          duration: 1000
-        });
-      } catch(err) {}
-
       document.getElementById('player-panel').style.display = 'flex';
       document.getElementById('video-title').innerText = title;
 
-      // 영상 재생 안전 호출 (초기화 전이라도 iframe 직접 교체 대응)
+      zoomToActiveLine();
+
       if (ytApiReady && player && typeof player.loadVideoById === 'function') {
         player.loadVideoById(videoId);
       } else {
@@ -315,9 +397,7 @@
 
         trackingMarker.addTo(map);
         updateMarkerPosition(curLen, totalLen);
-      } catch(err) {
-        console.warn("Sync calculation error:", err);
-      }
+      } catch(err) {}
     });
   });
 
@@ -340,6 +420,7 @@
 
   function closePlayer() {
     document.getElementById('player-panel').style.display = 'none';
+    if (isSplitMode) toggleSplitMode();
     if (player && typeof player.stopVideo === 'function') player.stopVideo();
     clearInterval(syncTimer);
     trackingMarker.remove();
