@@ -10,7 +10,7 @@
 
   <style>
     * { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #121212; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 
     #app-container {
       width: 100%;
@@ -125,7 +125,7 @@
       width: 100%;
     }
 
-    /* 제비꼬리 화살표 마커 */
+    /* 제비꼬리 마커 */
     .arrow-marker {
       width: 32px;
       height: 32px;
@@ -133,7 +133,6 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      position: relative;
     }
     .arrow-marker svg {
       width: 26px;
@@ -214,29 +213,31 @@
     });
   }
 
+  // 줌 레벨 19까지 깨짐 없는 고해상도 다크 타일맵(CartoDB Dark Matter) 적용
   const map = new maplibregl.Map({
     container: 'map',
     scrollZoom: true,
     boxZoom: true,
     dragRotate: true,
     dragPan: true,
+    maxZoom: 19,
     style: {
       version: 8,
       sources: {
-        'esri-dark-base': {
+        'carto-dark': {
           type: 'raster',
-          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}'],
-          tileSize: 256
-        },
-        'esri-dark-reference': {
-          type: 'raster',
-          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}'],
-          tileSize: 256
+          tiles: [
+            'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
+            'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
+            'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
+            'https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'
+          ],
+          tileSize: 256,
+          attribution: '&copy; <a href="https://carto.com/">CARTO</a>'
         }
       },
       layers: [
-        { id: 'dark-base', type: 'raster', source: 'esri-dark-base', minzoom: 0, maxzoom: 18 },
-        { id: 'dark-ref', type: 'raster', source: 'esri-dark-reference', minzoom: 0, maxzoom: 18 }
+        { id: 'carto-dark-layer', type: 'raster', source: 'carto-dark', minzoom: 0, maxzoom: 19 }
       ]
     },
     center: [126.9780, 37.5665],
@@ -262,7 +263,6 @@
     return match ? match[1] : null;
   }
 
-  // 좌표가 깨진 라인도 안전하게 유효한 단일 LineString으로 변환
   function getSafeLine(feature) {
     try {
       const coords = turf.coordAll(feature);
@@ -273,22 +273,24 @@
     return null;
   }
 
+  // 실시간 마커 위치 및 방향 회전 계산
   function updateMarkerPosition(currentLen, totalLen, safeLine) {
     if (!safeLine || totalLen <= 0) return;
     try {
-      const currentPos = turf.along(safeLine, currentLen, { units: 'kilometers' });
-      const delta = Math.min(0.015, (totalLen - currentLen) / 2);
-      let targetLen = currentLen + delta;
-      if (targetLen > totalLen) targetLen = totalLen;
-
+      let clampedLen = Math.max(0.0001, Math.min(currentLen, totalLen));
+      const currentPos = turf.along(safeLine, clampedLen, { units: 'kilometers' });
+      
+      const delta = Math.min(0.02, (totalLen - clampedLen) / 2);
+      let targetLen = Math.min(totalLen, clampedLen + delta);
       const lookAheadPos = turf.along(safeLine, targetLen, { units: 'kilometers' });
+      
       let bearing = 0;
-      if (currentLen < totalLen) {
+      if (clampedLen < totalLen) {
         bearing = turf.bearing(currentPos, lookAheadPos);
       }
 
       const coord = currentPos.geometry.coordinates;
-      if (coord && !isNaN(coord[0]) && !isNaN(coord[1])) {
+      if (coord && !isNaN(coord[0]) && !isNaN(coord[1]) && (coord[0] !== 0 || coord[1] !== 0)) {
         trackingMarker.setLngLat(coord);
         arrowSvg.style.transform = `rotate(${bearing}deg)`;
       }
@@ -300,9 +302,9 @@
     try {
       const lineBbox = turf.bbox(activeLine);
       if (isSplitMode) {
-        map.fitBounds(lineBbox, { padding: 50, maxZoom: 15.5, duration: 600 });
+        map.fitBounds(lineBbox, { padding: 60, maxZoom: 16.5, duration: 600 });
       } else {
-        map.fitBounds(lineBbox, { padding: { top: 60, bottom: 60, left: 60, right: 410 }, maxZoom: 15.5, duration: 600 });
+        map.fitBounds(lineBbox, { padding: { top: 60, bottom: 60, left: 60, right: 410 }, maxZoom: 16.5, duration: 600 });
       }
     } catch(err) {}
   }
@@ -394,6 +396,7 @@
       hoverPopup.remove();
     });
 
+    // 코스 클릭 이벤트
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       const props = activeLine.properties || {};
@@ -414,18 +417,29 @@
       const safeLine = getSafeLine(activeLine);
       if (!safeLine) return;
 
-      const clickedCoords = [e.lngLat.lng, e.lngLat.lat];
-      const snapped = turf.nearestPointOnLine(safeLine, turf.point(clickedCoords));
-      const totalLen = turf.length(safeLine, { units: 'kilometers' });
+      const clickedLngLat = [e.lngLat.lng, e.lngLat.lat];
+      const snapped = turf.nearestPointOnLine(safeLine, turf.point(clickedLngLat));
+      const exactPos = snapped.geometry.coordinates;
 
-      const startCoord = safeLine.geometry.coordinates[0];
-      const startPt = turf.point(startCoord);
+      // 1. 클릭 즉시 마커를 [0, 0]이 아닌 클릭한 선분 지점에 고정
+      trackingMarker.setLngLat(exactPos).addTo(map);
+
+      const totalLen = turf.length(safeLine, { units: 'kilometers' });
+      const startPt = turf.point(safeLine.geometry.coordinates[0]);
       const sliced = turf.lineSlice(startPt, snapped, safeLine);
       const curLen = turf.length(sliced, { units: 'kilometers' });
 
       pendingSeekRatio = totalLen > 0 ? (curLen / totalLen) : 0;
 
-      // 유튜브 영상 교체 (API 로드 여부와 관계없이 무조건 재생되는 완벽 처리)
+      // 2. 초기 진행 방향 회전각 계산
+      try {
+        const delta = Math.min(0.02, (totalLen - curLen) / 2);
+        const lookAhead = turf.along(safeLine, Math.min(totalLen, curLen + delta), { units: 'kilometers' });
+        const initBearing = turf.bearing(snapped, lookAhead);
+        arrowSvg.style.transform = `rotate(${initBearing}deg)`;
+      } catch(err) {}
+
+      // 3. 유튜브 영상 로드
       if (currentVideoId !== videoId) {
         currentVideoId = videoId;
         if (player && typeof player.loadVideoById === 'function') {
@@ -437,10 +451,6 @@
       } else {
         applyPendingSeek();
       }
-
-      // 제비꼬리 마커를 클릭한 위치로 즉시 정확하게 배치
-      trackingMarker.addTo(map);
-      updateMarkerPosition(curLen, totalLen, safeLine);
     });
   });
 
@@ -562,7 +572,7 @@
       try {
         const fc = turf.featureCollection(filteredFeatures);
         const bbox = turf.bbox(fc);
-        map.fitBounds(bbox, { padding: 80, maxZoom: 14, duration: 800 });
+        map.fitBounds(bbox, { padding: 80, maxZoom: 15, duration: 800 });
       } catch(e) {}
     }
   }
