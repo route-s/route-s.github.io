@@ -12,7 +12,6 @@
     * { box-sizing: border-box; }
     body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
 
-    /* 메인 앱 컨테이너 */
     #app-container {
       position: absolute;
       top: 0; left: 0; width: 100%; height: 100%;
@@ -28,7 +27,6 @@
       transition: height 0.3s ease, top 0.3s ease;
     }
 
-    /* 좌측 상단 행정구역 3단 필터 바 */
     #filter-container {
       position: absolute;
       top: 15px;
@@ -59,7 +57,6 @@
       cursor: not-allowed;
     }
 
-    /* 유튜브 플레이어 패널 (기본: 우측 상단 플로팅 팝업) */
     #player-panel {
       position: absolute;
       top: 15px;
@@ -84,7 +81,6 @@
     #video-title { font-size: 15px; font-weight: bold; margin-bottom: 4px; color: #00ffff; line-height: 1.3; }
     #video-guide { font-size: 11px; color: #888; }
 
-    /* 패널 제어 버튼들 */
     .panel-btn {
       position: absolute; top: 8px; background: rgba(0,0,0,0.6);
       color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px;
@@ -96,7 +92,6 @@
     #close-btn { right: 8px; font-size: 16px; }
     #split-btn { right: 42px; font-size: 13px; }
 
-    /* === [상하 분할 모드 스타일] === */
     body.split-mode #player-panel {
       position: relative;
       top: 0; left: 0; right: 0;
@@ -121,7 +116,6 @@
       top: calc(50vh + 15px);
     }
 
-    /* 제비꼬리 화살표 */
     .arrow-marker {
       width: 24px;
       height: 24px;
@@ -151,7 +145,6 @@
 <body>
 
 <div id="app-container">
-  <!-- 유튜브 플레이어 패널 -->
   <div id="player-panel">
     <button id="split-btn" class="panel-btn" onclick="toggleSplitMode()" title="화면 상하 분할 / 팝업 토글">◫</button>
     <button id="close-btn" class="panel-btn" onclick="closePlayer()" title="닫기">×</button>
@@ -162,7 +155,6 @@
     </div>
   </div>
 
-  <!-- 행정구역 3단 필터 -->
   <div id="filter-container">
     <select id="country-select" class="filter-select">
       <option value="ALL">1단계: 국가 전체</option>
@@ -175,7 +167,6 @@
     </select>
   </div>
 
-  <!-- 지도 컨테이너 -->
   <div id="map"></div>
 </div>
 
@@ -245,7 +236,6 @@
       if (targetLen > totalLen) targetLen = totalLen;
 
       const lookAheadPos = turf.along(activeLine, targetLen, { units: 'kilometers' });
-
       let bearing = 0;
       if (currentLen < totalLen) {
         bearing = turf.bearing(currentPos, lookAheadPos);
@@ -256,20 +246,17 @@
     } catch(e) {}
   }
 
-  // 선택된 코스로 최적 줌인하는 공통 헬퍼
   function zoomToActiveLine() {
     if (!activeLine) return;
     try {
       const lineBbox = turf.bbox(activeLine);
       if (isSplitMode) {
-        // 상하 분할 시: 아래쪽 50% 지도 정중앙에 시원하게 맞춤
         map.fitBounds(lineBbox, {
           padding: { top: 60, bottom: 60, left: 60, right: 60 },
           maxZoom: 15.5,
           duration: 900
         });
       } else {
-        // 팝업 모드 시: 우측 플레이어 패널을 피해서 중심 배치
         map.fitBounds(lineBbox, {
           padding: { top: 70, bottom: 70, left: 70, right: 420 },
           maxZoom: 15.5,
@@ -279,15 +266,14 @@
     } catch(err) {}
   }
 
-  // 상하 분할 모드 토글 함수
   function toggleSplitMode() {
     isSplitMode = !isSplitMode;
     document.body.classList.toggle('split-mode', isSplitMode);
     document.getElementById('split-btn').innerText = isSplitMode ? '❐' : '◫';
 
     setTimeout(() => {
-      map.resize(); // 뷰포트 크기 변경 알림
-      zoomToActiveLine(); // 변경된 화면에 맞춰 코스 재정렬
+      map.resize();
+      zoomToActiveLine();
     }, 320);
   }
 
@@ -297,6 +283,7 @@
       .then(data => {
         rawGeojsonData = data;
 
+        // 브라우저 실시간 공간 연산 완전 제거: routes.geojson의 사전 태깅된 속성만 파싱
         rawGeojsonData.features.forEach((f, idx) => {
           f.id = idx;
           const p = f.properties || {};
@@ -354,7 +341,6 @@
       hoverPopup.remove();
     });
 
-    // 코스 클릭 시
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       const props = activeLine.properties || {};
