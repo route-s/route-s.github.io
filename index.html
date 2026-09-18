@@ -211,6 +211,7 @@
   let player = null;
   let activeLine = null;
   let activeLineId = null;
+  let hoveredLineId = null;
   let trackingMarker = null;
   let arrowSvg = null;
   let syncTimer = null;
@@ -364,7 +365,6 @@
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   }
 
-  // 화면에 렌더링된 원본 선분 그대로 추출 (임의 변형 배제)
   function getCleanedCoords(feature) {
     const raw = turf.coordAll(feature);
     const cleaned = [];
@@ -377,7 +377,6 @@
     return cleaned;
   }
 
-  /* ================= [화면 선분 100% 일치] 누적 거리 & 스냅 연산 ================= */
   function findSequentialPosition(coords, clickLngLat) {
     if (!coords || coords.length < 2) return { ratio: 0, snappedCoord: clickLngLat, bearing: 0 };
 
@@ -511,6 +510,17 @@
     }
   }
 
+  function updateHoverHighlight(featureId) {
+    if (map.getLayer('routes-hover-line')) {
+      if (featureId !== null && featureId !== undefined && featureId !== activeLineId) {
+        map.setFilter('routes-hover-line', ['==', ['id'], featureId]);
+      } else {
+        map.setFilter('routes-hover-line', ['==', ['id'], -9999]);
+      }
+    }
+  }
+
+  /* ================= [00:00 리셋 완전 방지] 정밀 탐색 스케줄러 ================= */
   function executePreciseSeek(targetRatio) {
     if (targetRatio === null || targetRatio === undefined) return;
     pendingSeekRatio = targetRatio;
@@ -523,6 +533,7 @@
       if (!player || typeof player.getDuration !== 'function') return;
 
       const dur = player.getDuration();
+      // 유효한 총 영상 길이가 확인되는 즉시 목표 시간으로 이동
       if (dur && dur > 0) {
         const targetSeconds = dur * pendingSeekRatio;
         player.seekTo(targetSeconds, true);
@@ -530,7 +541,7 @@
         pendingSeekRatio = null;
       }
 
-      if (attempts > 80) {
+      if (attempts > 100) {
         clearInterval(seekCheckInterval);
       }
     }, 100);
@@ -625,6 +636,7 @@
         data: rawGeojsonData
       });
 
+      // 1. 기본 라인 레이어 (민트색 기본선)
       map.addLayer({
         id: 'routes-line',
         type: 'line',
@@ -637,6 +649,21 @@
         }
       });
 
+      // 2. [신규 인터랙티브] 마우스 호버(Hover) 시 두꺼워지는 글로우 레이어
+      map.addLayer({
+        id: 'routes-hover-line',
+        type: 'line',
+        source: 'routes',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        filter: ['==', ['id'], -9999],
+        paint: {
+          'line-color': '#ffffff',
+          'line-width': 5.8,
+          'line-opacity': 0.85
+        }
+      });
+
+      // 3. 선택된 활성 라인 레이어 (형광 옐로우골드 두꺼운 선)
       map.addLayer({
         id: 'routes-active-line',
         type: 'line',
@@ -654,9 +681,17 @@
     });
 
     const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
+
+    // 마우스 호버 이벤트: 선 두께 확장 및 툴팁 표시
     map.on('mouseenter', 'routes-line', (e) => {
       map.getCanvas().style.cursor = 'pointer';
-      const props = e.features[0].properties || {};
+      const feature = e.features[0];
+      hoveredLineId = feature.id !== undefined ? feature.id : feature.properties.id;
+
+      // 마우스가 올라간 선을 두껍게 확장 (선택 예정 상태 표시)
+      updateHoverHighlight(hoveredLineId);
+
+      const props = feature.properties || {};
       const title = props.name || props.Name || '도보 코스';
       let locTag = '';
       if (props.country === '대한민국' && props.sido) {
@@ -664,14 +699,17 @@
       } else if (props.country) {
         locTag = `<br><span style="color:#aaa; font-size:11px;">[${props.country}]</span>`;
       }
-      hoverPopup.setLngLat(e.lngLat).setHTML(`<strong>${title}</strong>${locTag}<br><span style="color:#ffe600;">클릭하여 영상 시청</span>`).addTo(map);
+      hoverPopup.setLngLat(e.lngLat).setHTML(`<strong>${title}</strong>${locTag}<br><span style="color:#00ffff;">클릭하여 영상 시청</span>`).addTo(map);
     });
 
     map.on('mouseleave', 'routes-line', () => {
       map.getCanvas().style.cursor = '';
+      hoveredLineId = null;
+      updateHoverHighlight(null);
       hoverPopup.remove();
     });
 
+    // 코스 클릭 이벤트
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
@@ -685,6 +723,8 @@
         return;
       }
 
+      // 호버 해제 후 활성 선택 강조
+      updateHoverHighlight(null);
       updateActiveRouteHighlight(activeLineId);
 
       document.getElementById('player-panel').style.display = 'flex';
@@ -700,6 +740,7 @@
       trackingMarker.setLngLat(pos.snappedCoord).addTo(map);
       arrowSvg.style.transform = `rotate(${pos.bearing}deg)`;
 
+      // 영상 교체 또는 즉시 점프
       if (currentVideoId !== videoId) {
         currentVideoId = videoId;
         if (player && typeof player.loadVideoById === 'function') {
@@ -760,6 +801,7 @@
     pendingSeekRatio = null;
     currentVideoId = null;
     updateActiveRouteHighlight(null);
+    updateHoverHighlight(null);
   }
 
   const countrySelect = document.getElementById('country-select');
