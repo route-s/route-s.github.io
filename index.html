@@ -354,20 +354,6 @@
     return match ? match[1] : null;
   }
 
-  function getNaturalOrderedCoords(feature) {
-    const coords = turf.coordAll(feature);
-    const cleaned = [];
-    for (let i = 0; i < coords.length; i++) {
-      const p = coords[i];
-      if (p && !isNaN(p[0]) && !isNaN(p[1])) {
-        if (cleaned.length === 0 || cleaned[cleaned.length - 1][0] !== p[0] || cleaned[cleaned.length - 1][1] !== p[1]) {
-          cleaned.push(p);
-        }
-      }
-    }
-    return cleaned;
-  }
-
   function calcDistKm(c1, c2) {
     const R = 6371;
     const dLat = (c2[1] - c1[1]) * Math.PI / 180;
@@ -378,6 +364,51 @@
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
   }
 
+  /* ================= [핵심] 점 편집 꼬임 완전 복원: 위상 사슬 정렬 ================= */
+  function reconstructPathTopology(rawCoords) {
+    if (!rawCoords || rawCoords.length <= 2) return rawCoords;
+
+    // 1. 유효 노드 추출 및 미세 중복 제거
+    const pts = [];
+    for (let i = 0; i < rawCoords.length; i++) {
+      const p = rawCoords[i];
+      if (p && !isNaN(p[0]) && !isNaN(p[1])) {
+        if (pts.length === 0 || calcDistKm(pts[pts.length - 1], p) > 0.0005) {
+          pts.push([p[0], p[1]]);
+        }
+      }
+    }
+    if (pts.length <= 2) return pts;
+
+    // 2. 출발점(0번 점)에서 시작하여 가장 인접한 이웃 점으로 단방향 사슬 추적
+    const unvisited = pts.slice(1);
+    const path = [pts[0]];
+
+    while (unvisited.length > 0) {
+      const current = path[path.length - 1];
+      let bestIdx = 0;
+      let minD = Infinity;
+
+      for (let i = 0; i < unvisited.length; i++) {
+        const d = calcDistKm(current, unvisited[i]);
+        if (d < minD) {
+          minD = d;
+          bestIdx = i;
+        }
+      }
+
+      path.push(unvisited.splice(bestIdx, 1)[0]);
+    }
+
+    return path;
+  }
+
+  function getCleanedCoords(feature) {
+    const raw = turf.coordAll(feature);
+    return reconstructPathTopology(raw);
+  }
+
+  /* ================= 정밀 순차 누적 거리 연산 ================= */
   function findSequentialPosition(coords, clickLngLat) {
     if (!coords || coords.length < 2) return { ratio: 0, snappedCoord: clickLngLat, bearing: 0 };
 
@@ -391,13 +422,13 @@
 
     if (totalLength === 0) return { ratio: 0, snappedCoord: coords[0], bearing: 0 };
 
-    let minDistanceToSegment = Infinity;
-    let bestSegIdx = 0;
-    let bestSegT = 0;
-    let bestSnappedCoord = coords[0];
-
     const px = clickLngLat[0];
     const py = clickLngLat[1];
+
+    let minDistance = Infinity;
+    let bestSegIdx = 0;
+    let bestT = 0;
+    let bestCoord = coords[0];
 
     for (let i = 0; i < coords.length - 1; i++) {
       const p1 = coords[i];
@@ -415,28 +446,28 @@
 
       const snapX = p1[0] + t * dx;
       const snapY = p1[1] + t * dy;
-      const distToClick = calcDistKm(clickLngLat, [snapX, snapY]);
+      const d = calcDistKm(clickLngLat, [snapX, snapY]);
 
-      if (distToClick < minDistanceToSegment) {
-        minDistanceToSegment = distToClick;
+      if (d < minDistance) {
+        minDistance = d;
         bestSegIdx = i;
-        bestSegT = t;
-        bestSnappedCoord = [snapX, snapY];
+        bestT = t;
+        bestCoord = [snapX, snapY];
       }
     }
 
-    let accumulatedDist = 0;
+    let accumulated = 0;
     for (let i = 0; i < bestSegIdx; i++) {
-      accumulatedDist += segLengths[i];
+      accumulated += segLengths[i];
     }
-    accumulatedDist += segLengths[bestSegIdx] * bestSegT;
+    accumulated += segLengths[bestSegIdx] * bestT;
 
-    const finalRatio = Math.max(0, Math.min(1, accumulatedDist / totalLength));
+    const ratio = Math.max(0, Math.min(1, accumulated / totalLength));
     const bearing = turf.bearing(turf.point(coords[bestSegIdx]), turf.point(coords[bestSegIdx + 1]));
 
     return {
-      ratio: finalRatio,
-      snappedCoord: bestSnappedCoord,
+      ratio: ratio,
+      snappedCoord: bestCoord,
       bearing: bearing,
       totalLength: totalLength
     };
@@ -501,7 +532,6 @@
     }, 250);
   }
 
-  // 선택된 루트 하이라이트 갱신 함수
   function updateActiveRouteHighlight(featureId) {
     if (map.getLayer('routes-active-line')) {
       if (featureId !== null && featureId !== undefined) {
@@ -512,7 +542,6 @@
     }
   }
 
-  // 00:00 리셋을 완벽 차단하는 정밀 Seek 스케줄러
   function executePreciseSeek(targetRatio) {
     if (targetRatio === null || targetRatio === undefined) return;
     pendingSeekRatio = targetRatio;
@@ -525,7 +554,6 @@
       if (!player || typeof player.getDuration !== 'function') return;
 
       const dur = player.getDuration();
-      // 영상 길이가 0초보다 크고 재생 준비가 되었을 때만 정확히 1회 점프
       if (dur && dur > 0) {
         const targetSeconds = dur * pendingSeekRatio;
         player.seekTo(targetSeconds, true);
@@ -533,7 +561,7 @@
         pendingSeekRatio = null;
       }
 
-      if (attempts > 80) { // 8초 이상 경과 시 종료
+      if (attempts > 80) {
         clearInterval(seekCheckInterval);
       }
     }, 100);
@@ -548,7 +576,6 @@
     ]).then(([routesData, worldGeo, sidoGeo, sigunguGeo]) => {
       rawGeojsonData = routesData;
 
-      // 1. 세계 국경선
       map.addSource('boundary-country-source', { type: 'geojson', data: worldGeo });
       map.addLayer({
         id: 'boundary-country-line',
@@ -563,7 +590,6 @@
         }
       });
 
-      // 2. 대한민국 시도 경계선
       map.addSource('boundary-sido-source', { type: 'geojson', data: sidoGeo });
       map.addLayer({
         id: 'boundary-sido-line',
@@ -577,7 +603,6 @@
         }
       });
 
-      // 3. 대한민국 시군구 경계선
       sigunguGeo.features.forEach(f => {
         const prefix = String(f.properties.code || '').substring(0, 2);
         f.properties._sido = KOR_SIDO_CODE_MAP[prefix] || "기타시도";
@@ -608,7 +633,6 @@
         }
       });
 
-      // 4. 메인 도보 코스
       rawGeojsonData.features.forEach((f, idx) => {
         f.id = idx;
         const p = f.properties || {};
@@ -632,7 +656,6 @@
         data: rawGeojsonData
       });
 
-      // (1) 일반 코스 라인: 은은한 기본 민트색
       map.addLayer({
         id: 'routes-line',
         type: 'line',
@@ -645,13 +668,12 @@
         }
       });
 
-      // (2) 선택된 코스 하이라이트 라인: 형광 옐로우골드로 두껍게 강조
       map.addLayer({
         id: 'routes-active-line',
         type: 'line',
         source: 'routes',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
-        filter: ['==', ['id'], -9999], // 초기에는 아무것도 안 뜸
+        filter: ['==', ['id'], -9999],
         paint: {
           'line-color': '#ffe600',
           'line-width': 5.5,
@@ -695,7 +717,6 @@
         return;
       }
 
-      // [선택 부각] 클릭된 코스를 굵고 선명한 형광 옐로우골드로 즉시 하이라이트
       updateActiveRouteHighlight(activeLineId);
 
       document.getElementById('player-panel').style.display = 'flex';
@@ -703,16 +724,15 @@
 
       zoomToActiveLine();
 
-      const orderedCoords = getNaturalOrderedCoords(activeLine);
+      // 위상 재정렬된 좌표계 획득
+      const orderedCoords = getCleanedCoords(activeLine);
       const clickedLngLat = [e.lngLat.lng, e.lngLat.lat];
 
-      // 클릭 지점 비율 도출
       const pos = findSequentialPosition(orderedCoords, clickedLngLat);
 
       trackingMarker.setLngLat(pos.snappedCoord).addTo(map);
       arrowSvg.style.transform = `rotate(${pos.bearing}deg)`;
 
-      // [핵심] 00:00 리셋을 원천 방지하는 재생 명령 분기
       if (currentVideoId !== videoId) {
         currentVideoId = videoId;
         if (player && typeof player.loadVideoById === 'function') {
@@ -723,7 +743,6 @@
         }
         executePreciseSeek(pos.ratio);
       } else {
-        // 이미 같은 영상을 시청 중일 때는 즉각 시간 점프
         if (player && typeof player.getDuration === 'function') {
           const dur = player.getDuration();
           if (dur > 0) {
@@ -751,7 +770,7 @@
           const dur = player.getDuration();
           if (!dur || dur === 0) return;
 
-          const orderedCoords = getNaturalOrderedCoords(activeLine);
+          const orderedCoords = getCleanedCoords(activeLine);
           const progress = curTime / dur;
           const currentLoc = getCoordAlongSequence(orderedCoords, progress);
 
@@ -773,8 +792,6 @@
     trackingMarker.remove();
     pendingSeekRatio = null;
     currentVideoId = null;
-
-    // 하이라이트 해제
     updateActiveRouteHighlight(null);
   }
 
@@ -837,7 +854,6 @@
     const sd = sidoSelect.value;
     const sgg = sigunguSelect.value;
 
-    /* 코스 라인 필터링 */
     const filteredFeatures = rawGeojsonData.features.filter(f => {
       const p = f.properties || {};
       if (c !== 'ALL' && p.country !== c) return false;
@@ -859,7 +875,6 @@
       map.setFilter('routes-line', ['in', ['id'], ['literal', matchedIds]]);
     }
 
-    /* 단계별 행정경계 표출 */
     if (map.getLayer('boundary-country-line')) {
       if (c === 'ALL') {
         map.setLayoutProperty('boundary-country-line', 'visibility', 'visible');
