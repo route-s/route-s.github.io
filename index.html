@@ -121,26 +121,10 @@
     .year-checkbox-label:hover { color: #00ffff; }
     .year-checkbox-label input { accent-color: #00ffff; cursor: pointer; }
 
-    @media (max-width: 640px) {
-      #filter-container {
-        top: 10px;
-        left: 10px;
-        right: 10px;
-        width: calc(100% - 20px);
-        padding: 6px 8px;
-        gap: 4px;
-      }
-      .filter-select, .dropdown-btn {
-        flex: 1;
-        min-width: 0;
-        padding: 5px 4px;
-        font-size: 11px;
-      }
-    }
-
+    /* 플레이어 패널 (모바일 상단 잘림 방지 구조 개선) */
     #player-panel {
       position: absolute;
-      top: 15px;
+      top: 70px;
       right: 15px;
       width: 380px;
       max-width: calc(100vw - 30px);
@@ -171,6 +155,31 @@
     .panel-btn:hover { background: rgba(0,206,209,0.8); color: #000; }
     #close-btn { right: 8px; font-size: 16px; }
     #split-btn { right: 42px; font-size: 13px; }
+
+    @media (max-width: 640px) {
+      #filter-container {
+        top: 10px;
+        left: 10px;
+        right: 10px;
+        width: calc(100% - 20px);
+        padding: 6px 8px;
+        gap: 4px;
+      }
+      .filter-select, .dropdown-btn {
+        flex: 1;
+        min-width: 0;
+        padding: 5px 4px;
+        font-size: 11px;
+      }
+      /* 모바일에서 플레이어 패널이 필터 아래로 내려오도록 여백 확보 */
+      #player-panel {
+        top: 60px;
+        left: 10px;
+        right: 10px;
+        width: calc(100% - 20px);
+        max-width: 100%;
+      }
+    }
 
     body.split-mode #app-container {
       display: flex;
@@ -234,12 +243,9 @@
         <option value="ALL">3: 시·군·구 (City/Dist.)</option>
       </select>
 
-      <!-- 연도별 다중 선택 체크박스 필터 메뉴 -->
       <div class="dropdown-multiselect" id="year-dropdown-container">
         <button class="dropdown-btn" type="button" onclick="toggleYearDropdown()">📅 연도별 (Years) ▼</button>
-        <div class="dropdown-content" id="year-checkboxes">
-          <!-- JS 동적 생성 -->
-        </div>
+        <div class="dropdown-content" id="year-checkboxes"></div>
       </div>
     </div>
     <div id="map"></div>
@@ -288,7 +294,7 @@
 
   const DISTRICT_EN_MAP = {
     "종로구": "Jongno-gu", "중구": "Jung-gu", "용산구": "Yongsan-gu", "성동구": "Seongdong-gu",
-    "광진구": "Gwangjin-gu", "동대문구": "Dongdaemun-gu", "중랑구": "Jungnang-gu", "성북구": "Sungbuk-gu",
+    "광진구": "Gwangjin-gu", "동대문구": "Dongdaemun-gu", "중랑구": "Jungnang-gu", "성북구": "Seongbuk-gu",
     "강북구": "Gangbuk-gu", "도봉구": "Dobong-gu", "노원구": "Nowon-gu", "은평구": "Eunpyeong-gu",
     "서대문구": "Seodaemun-gu", "마포구": "Mapo-gu", "양천구": "Yangcheon-gu", "강서구": "Gangseo-gu",
     "구로구": "Guro-gu", "금천구": "Geumcheon-gu", "영등포구": "Yeongdeungpo-gu", "동작구": "Dongjak-gu",
@@ -333,7 +339,6 @@
     document.getElementById('year-checkboxes').classList.toggle('show');
   }
 
-  // 외부 클릭 시 연도 드롭다운 닫기
   window.addEventListener('click', (e) => {
     if (!document.getElementById('year-dropdown-container').contains(e.target)) {
       document.getElementById('year-checkboxes').classList.remove('show');
@@ -553,10 +558,9 @@
         }
       });
 
-      // 연도 체크박스 UI 동적 생성 (최신순 정렬)
       const sortedYears = Array.from(availableYears).sort((a, b) => b.localeCompare(a));
       sortedYears.forEach(yr => {
-        selectedYears.add(yr); // 기본 전체 선택
+        selectedYears.add(yr);
         yearCheckboxesContainer.innerHTML += `
           <label class="year-checkbox-label">
             <input type="checkbox" value="${yr}" checked onchange="onYearCheckboxChange(this)"> ${yr}년
@@ -567,6 +571,18 @@
       map.addSource('routes', {
         type: 'geojson',
         data: rawGeojsonData
+      });
+
+      // [편의성 개선] 터치/클릭 판정을 훨씬 넓게 해주는 투명 히트박스 레이어 (아래에 배치)
+      map.addLayer({
+        id: 'routes-hitbox',
+        type: 'line',
+        source: 'routes',
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': 'transparent',
+          'line-width': 18
+        }
       });
 
       map.addLayer({
@@ -609,7 +625,6 @@
 
       buildDynamicFilters();
 
-      // [초기 설정] 대한민국 > 서울특별시 기본 선택
       countrySelect.value = "대한민국";
       countrySelect.dispatchEvent(new Event('change'));
       
@@ -619,7 +634,8 @@
 
     const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
 
-    map.on('mouseenter', 'routes-line', (e) => {
+    // 히트박스 레이어를 기준으로 마우스/터치 이벤트 통합 처리
+    map.on('mouseenter', 'routes-hitbox', (e) => {
       map.getCanvas().style.cursor = 'pointer';
       const feature = e.features[0];
       hoveredLineId = feature.id !== undefined ? feature.id : feature.properties.id;
@@ -637,14 +653,14 @@
       hoverPopup.setLngLat(e.lngLat).setHTML(`<strong>${title}</strong>${locTag}<br><span style="color:#00ffff;">클릭하여 영상 시청</span>`).addTo(map);
     });
 
-    map.on('mouseleave', 'routes-line', () => {
+    map.on('mouseleave', 'routes-hitbox', () => {
       map.getCanvas().style.cursor = '';
       hoveredLineId = null;
       updateHoverHighlight(null);
       hoverPopup.remove();
     });
 
-    map.on('click', 'routes-line', (e) => {
+    map.on('click', 'routes-hitbox', (e) => {
       activeLine = e.features[0];
       activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
       const props = activeLine.properties || {};
@@ -759,22 +775,18 @@
     const filteredFeatures = rawGeojsonData.features.filter(f => {
       const p = f.properties || {};
       
-      // 1. 국가 필터
       if (c !== 'ALL' && p.country !== c) return false;
       
-      // 2. 시도 필터
       if (c === '대한민국' && sd !== 'ALL') {
         const sidos = (p.sido || "").split(',').map(s => s.trim());
         if (!sidos.includes(sd)) return false;
       }
       
-      // 3. 시군구 필터
       if (c === '대한민국' && sd !== 'ALL' && sgg !== 'ALL') {
         const sigs = (p.sigungu || "").split(',').map(s => s.trim());
         if (!sigs.includes(sgg)) return false;
       }
 
-      // 4. 연도 체크박스 다중 선택 필터
       const yr = extractYear(f);
       if (yr && !selectedYears.has(yr)) return false;
 
@@ -782,11 +794,10 @@
     });
 
     const matchedIds = filteredFeatures.map(f => f.id);
-    if (c === 'ALL' && selectedYears.size === availableYears.size) {
-      map.setFilter('routes-line', null);
-    } else {
-      map.setFilter('routes-line', ['in', ['id'], ['literal', matchedIds]]);
-    }
+    const filterExpression = (c === 'ALL' && selectedYears.size === availableYears.size) ? null : ['in', ['id'], ['literal', matchedIds]];
+    
+    map.setFilter('routes-line', filterExpression);
+    map.setFilter('routes-hitbox', filterExpression);
 
     if (map.getLayer('boundary-country-line')) {
       if (c === 'ALL') {
