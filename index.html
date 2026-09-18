@@ -209,7 +209,6 @@
 
 <script>
   let player = null;
-  let isPlayerReady = false;
   let activeLine = null;
   let activeLineId = null;
   let hoveredLineId = null;
@@ -220,7 +219,15 @@
   let adminHierarchy = {};
   let isSplitMode = false;
   let currentVideoId = null;
-  let targetSeekRatio = null; // 사용자가 클릭한 지점의 진행 비율 (0 ~ 1)
+  let targetSeekRatio = null;
+  let seekPoller = null;
+
+  /* 서울특별시 25개 자치구 화이트리스트 (타 시·도 혼입 차단) */
+  const SEOUL_DISTRICTS = new Set([
+    "종로구", "중구", "용산구", "성동구", "광진구", "동대문구", "중랑구", "성북구",
+    "강북구", "도봉구", "노원구", "은평구", "서대문구", "마포구", "양천구", "강서구",
+    "구로구", "금천구", "영등포구", "동작구", "관악구", "서초구", "강남구", "송파구", "강동구"
+  ]);
 
   const COUNTRY_EN_MAP = {
     "대한민국": "Korea", "일본": "Japan", "싱가포르": "Singapore",
@@ -251,7 +258,7 @@
     "관악구": "Gwanak-gu", "서초구": "Seocho-gu", "강남구": "Gangnam-gu", "송파구": "Songpa-gu",
     "강동구": "Gangdong-gu", "고양시덕양구": "Goyang Deogyang", "고양시일산동구": "Ilsandong-gu",
     "고양시일산서구": "Ilsanseo-gu", "성남시분당구": "Bundang-gu", "수원시팔달구": "Paldal-gu",
-    "제주시": "Jeju-si", "서귀포시": "Seogwipo-si"
+    "광명시": "Gwangmyeong-si", "제주시": "Jeju-si", "서귀포시": "Seogwipo-si"
   };
 
   function formatCountryLabel(val) {
@@ -290,7 +297,6 @@
         'origin': window.location.origin 
       },
       events: {
-        'onReady': () => { isPlayerReady = true; },
         'onStateChange': onPlayerStateChange
       }
     });
@@ -521,6 +527,34 @@
     }
   }
 
+  /* 00:00 강제 리셋을 완전히 분쇄하는 Seek 실행기 */
+  function forceAccurateSeek() {
+    if (targetSeekRatio === null || !player) return;
+    clearInterval(seekPoller);
+
+    let tries = 0;
+    seekPoller = setInterval(() => {
+      tries++;
+      if (typeof player.getDuration !== 'function') return;
+      
+      const dur = player.getDuration();
+      if (dur && dur > 0) {
+        const jumpSeconds = dur * targetSeekRatio;
+        player.seekTo(jumpSeconds, true);
+
+        // 3회 확인 후 완전 해제 (플레이어의 0초 리셋 방지 보장)
+        if (tries >= 3) {
+          clearInterval(seekPoller);
+          targetSeekRatio = null;
+        }
+      }
+
+      if (tries > 50) {
+        clearInterval(seekPoller);
+      }
+    }, 150);
+  }
+
   map.on('load', () => {
     Promise.all([
       fetch('./routes.geojson').then(r => r.json()),
@@ -587,6 +621,7 @@
         }
       });
 
+      /* 행정구역 트리 구성 (시·도 간 시군구 혼입 완전 격리) */
       rawGeojsonData.features.forEach((f, idx) => {
         f.id = idx;
         const p = f.properties || {};
@@ -599,7 +634,17 @@
           sidos.forEach(sd => {
             if (sd !== "-" && sd !== "") {
               if (!adminHierarchy[c][sd]) adminHierarchy[c][sd] = new Set();
-              sigs.forEach(sg => { if (sg !== "-" && sg !== "") adminHierarchy[c][sd].add(sg); });
+              sigs.forEach(sg => {
+                if (sg !== "-" && sg !== "") {
+                  // 서울특별시의 경우 오직 서울 25개 자치구만 바인딩
+                  if (sd === "서울특별시") {
+                    if (SEOUL_DISTRICTS.has(sg)) adminHierarchy[c][sd].add(sg);
+                  } else {
+                    // 경기도 등 타 시도의 경우 서울 자치구가 아닌 경우만 바인딩
+                    if (!SEOUL_DISTRICTS.has(sg)) adminHierarchy[c][sd].add(sg);
+                  }
+                }
+              });
             }
           });
         }
@@ -708,7 +753,6 @@
       trackingMarker.setLngLat(pos.snappedCoord).addTo(map);
       arrowSvg.style.transform = `rotate(${pos.bearing}deg)`;
 
-      // 탐색 목표 비율 저장
       targetSeekRatio = pos.ratio;
 
       if (currentVideoId !== videoId) {
@@ -719,32 +763,28 @@
           document.getElementById('player-container').innerHTML = 
             `<iframe id="yt-player" src="https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
         }
+        forceAccurateSeek();
       } else {
-        // 동일 영상 시청 중 다른 구간 클릭 시 즉각 이동
         if (player && typeof player.getDuration === 'function') {
           const dur = player.getDuration();
           if (dur > 0) {
             player.seekTo(dur * targetSeekRatio, true);
             targetSeekRatio = null;
+          } else {
+            forceAccurateSeek();
           }
         }
       }
     });
   });
 
-  // 영상 재생 상태 변경 이벤트
   function onPlayerStateChange(event) {
     clearInterval(syncTimer);
 
-    // [핵심] 비디오가 완전히 로드되어 첫 재생(PLAYING)을 시작한 순간에 단 1회 타임스탬프 점프 실행
+    // 영상 재생이 시작될 때 대기 중인 점프 비율이 있다면 즉시 이동
     if (event.data === YT.PlayerState.PLAYING) {
-      if (targetSeekRatio !== null && player && typeof player.getDuration === 'function') {
-        const dur = player.getDuration();
-        if (dur && dur > 0) {
-          const jumpSec = dur * targetSeekRatio;
-          player.seekTo(jumpSec, true);
-          targetSeekRatio = null; // 1회 이동 후 잠금 해제 (반복 리셋 방지)
-        }
+      if (targetSeekRatio !== null) {
+        forceAccurateSeek();
       }
 
       if (activeLine) {
@@ -772,6 +812,7 @@
     if (isSplitMode) toggleSplitMode();
     if (player && typeof player.stopVideo === 'function') player.stopVideo();
     clearInterval(syncTimer);
+    clearInterval(seekPoller);
     trackingMarker.remove();
     targetSeekRatio = null;
     currentVideoId = null;
