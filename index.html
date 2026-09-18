@@ -150,19 +150,23 @@
       width: 100%;
     }
 
-    .arrow-marker {
-      width: 32px;
-      height: 32px;
-      pointer-events: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+    /* 시작점 마커 스타일 (초록색) */
+    .start-marker {
+      width: 22px;
+      height: 22px;
+      background: #2ed573;
+      border: 3px solid #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 0 10px rgba(46, 213, 115, 0.8);
     }
-    .arrow-marker svg {
-      width: 26px;
-      height: 26px;
-      filter: drop-shadow(0 0 6px rgba(255, 71, 87, 0.95)) drop-shadow(0 0 2px #000);
-      transform-origin: 50% 50%;
+    /* 종료점 마커 스타일 (주황-빨간색) */
+    .end-marker {
+      width: 22px;
+      height: 22px;
+      background: #ff4757;
+      border: 3px solid #ffffff;
+      border-radius: 50%;
+      box-shadow: 0 0 10px rgba(255, 71, 87, 0.8);
     }
 
     .maplibregl-popup-content {
@@ -185,7 +189,7 @@
     <div id="player-container"><div id="yt-player"></div></div>
     <div id="info-box">
       <div id="video-title">코스 명칭</div>
-      <div id="video-guide">💡 지도 위 경로를 클릭하면 해당 위치 영상으로 즉시 이동합니다.</div>
+      <div id="video-guide">💡 지도 위 경로를 클릭하면 해당 코스 영상이 재생됩니다.</div>
     </div>
   </div>
 
@@ -212,15 +216,12 @@
   let activeLine = null;
   let activeLineId = null;
   let hoveredLineId = null;
-  let trackingMarker = null;
-  let arrowSvg = null;
-  let syncTimer = null;
+  let startMarker = null;
+  let endMarker = null;
   let rawGeojsonData = null;
   let adminHierarchy = {};
   let isSplitMode = false;
   let currentVideoId = null;
-  let targetRatioToSeek = null;
-  let seekPoller = null;
 
   const SEOUL_DISTRICTS = new Set([
     "종로구", "중구", "용산구", "성동구", "광진구", "동대문구", "중랑구", "성북구",
@@ -250,7 +251,7 @@
 
   const DISTRICT_EN_MAP = {
     "종로구": "Jongno-gu", "중구": "Jung-gu", "용산구": "Yongsan-gu", "성동구": "Seongdong-gu",
-    "광진구": "Gwangjin-gu", "동대문구": "Dongdaemun-gu", "중랑구": "Jungnang-gu", "성북구": "Seongbuk-gu",
+    "광진구": "Gwangjin-gu", "동대문구": "Dongdaemun-gu", "중랑구": "Jungnang-gu", "성북구": "Sungbuk-gu",
     "강북구": "Gangbuk-gu", "도봉구": "Dobong-gu", "노원구": "Nowon-gu", "은평구": "Eunpyeong-gu",
     "서대문구": "Seodaemun-gu", "마포구": "Mapo-gu", "양천구": "Yangcheon-gu", "강서구": "Gangseo-gu",
     "구로구": "Guro-gu", "금천구": "Geumcheon-gu", "영등포구": "Yeongdeungpo-gu", "동작구": "Dongjak-gu",
@@ -294,9 +295,6 @@
         'rel': 0,
         'enablejsapi': 1,
         'origin': window.location.origin 
-      },
-      events: {
-        'onStateChange': onPlayerStateChange
       }
     });
   }
@@ -344,15 +342,15 @@
 
   map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
 
-  const markerEl = document.createElement('div');
-  markerEl.className = 'arrow-marker';
-  markerEl.innerHTML = `
-    <svg viewBox="0 0 24 24" fill="none">
-      <path d="M12 2L21 21L12 16.5L3 21L12 2Z" fill="#ff4757" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/>
-    </svg>
-  `;
-  arrowSvg = markerEl.querySelector('svg');
-  trackingMarker = new maplibregl.Marker({ element: markerEl, anchor: 'center' });
+  // 시작점 마커 DOM 생성 (초록색)
+  const startEl = document.createElement('div');
+  startEl.className = 'start-marker';
+  startMarker = new maplibregl.Marker({ element: startEl, anchor: 'center' });
+
+  // 종료점 마커 DOM 생성 (빨간색)
+  const endEl = document.createElement('div');
+  endEl.className = 'end-marker';
+  endMarker = new maplibregl.Marker({ element: endEl, anchor: 'center' });
 
   function extractYouTubeId(url) {
     if (!url) return null;
@@ -361,62 +359,16 @@
     return match ? match[1] : null;
   }
 
-  /* ================= [원론적 해결] 전체 선 벡터 길이 기준 등분(Linear Arc-Length Proportion) ================= */
-  function getLinearPosition(lineFeature, clickLngLat) {
-    try {
-      const clickPoint = turf.point(clickLngLat);
-      // 선분 벡터 상에서 가장 가까운 위치 스냅
-      const snapped = turf.nearestPointOnLine(lineFeature, clickPoint);
-      
-      // 선 전체의 누적 총 길이 (Vector Arc Length)
-      const totalLen = turf.length(lineFeature, { units: 'kilometers' });
-      if (totalLen === 0) return { ratio: 0, snappedCoord: clickLngLat, bearing: 0 };
-
-      // 선분의 시작점으로부터 스냅된 지점까지의 누적 길이
-      const startCoord = lineFeature.geometry.coordinates[0];
-      const slice = turf.lineSlice(turf.point(startCoord), snapped, lineFeature);
-      const sliceLen = turf.length(slice, { units: 'kilometers' });
-
-      // 전체 길이 대비 비율 (0.0 ~ 1.0) 선형 등분
-      const ratio = Math.max(0, Math.min(1, sliceLen / totalLen));
-
-      // 진행 방향 베어링 계산
-      const delta = Math.min(0.01, (totalLen - sliceLen) / 2);
-      const targetLen = Math.min(totalLen, sliceLen + delta);
-      const lookAhead = turf.along(lineFeature, targetLen, { units: 'kilometers' });
-      const bearing = turf.bearing(snapped, lookAhead);
-
-      return {
-        ratio: ratio,
-        snappedCoord: snapped.geometry.coordinates,
-        bearing: bearing
-      };
-    } catch (e) {
-      return { ratio: 0, snappedCoord: clickLngLat, bearing: 0 };
+  function getCleanedCoords(feature) {
+    const raw = turf.coordAll(feature);
+    const cleaned = [];
+    for (let i = 0; i < raw.length; i++) {
+      const p = raw[i];
+      if (p && !isNaN(p[0]) && !isNaN(p[1])) {
+        cleaned.push([p[0], p[1]]);
+      }
     }
-  }
-
-  function getCoordAlongLinear(lineFeature, ratio) {
-    try {
-      const totalLen = turf.length(lineFeature, { units: 'kilometers' });
-      if (totalLen === 0) return { coord: lineFeature.geometry.coordinates[0], bearing: 0 };
-
-      const targetDist = totalLen * Math.max(0, Math.min(1, ratio));
-      const currentPos = turf.along(lineFeature, targetDist, { units: 'kilometers' });
-      
-      const delta = Math.min(0.01, (totalLen - targetDist) / 2);
-      const lookAheadDist = Math.min(totalLen, targetDist + delta);
-      const lookAheadPos = turf.along(lineFeature, lookAheadDist, { units: 'kilometers' });
-      
-      const bearing = turf.bearing(currentPos, lookAheadPos);
-
-      return {
-        coord: currentPos.geometry.coordinates,
-        bearing: bearing
-      };
-    } catch (e) {
-      return { coord: lineFeature.geometry.coordinates[0], bearing: 0 };
-    }
+    return cleaned;
   }
 
   function zoomToActiveLine() {
@@ -466,30 +418,6 @@
         map.setFilter('routes-hover-line', ['==', ['id'], -9999]);
       }
     }
-  }
-
-  function ensureVideoSeek() {
-    if (targetRatioToSeek === null || !player) return;
-    clearInterval(seekPoller);
-
-    let count = 0;
-    seekPoller = setInterval(() => {
-      count++;
-      if (typeof player.getDuration !== 'function') return;
-
-      const dur = player.getDuration();
-      if (dur && dur > 0) {
-        const sec = dur * targetRatioToSeek;
-        player.seekTo(sec, true);
-
-        if (count >= 3) {
-          clearInterval(seekPoller);
-          targetRatioToSeek = null;
-        }
-      }
-
-      if (count > 50) clearInterval(seekPoller);
-    }, 150);
   }
 
   map.on('load', () => {
@@ -657,6 +585,7 @@
       hoverPopup.remove();
     });
 
+    // 경로 클릭 시: 00:00부터 전체 영상 재생 및 시작점/종료점 마커 표시
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
@@ -678,16 +607,17 @@
 
       zoomToActiveLine();
 
-      const clickedLngLat = [e.lngLat.lng, e.lngLat.lat];
-      
-      // 선 전체 벡터 길이 기준 등분 비율 산출
-      const pos = getLinearPosition(activeLine, clickedLngLat);
+      // 해당 선분의 정점 배열 추출하여 시작점과 종료점에 마커 부착
+      const coords = getCleanedCoords(activeLine);
+      if (coords.length >= 2) {
+        const startCoord = coords[0];
+        const endCoord = coords[coords.length - 1];
 
-      trackingMarker.setLngLat(pos.snappedCoord).addTo(map);
-      arrowSvg.style.transform = `rotate(${pos.bearing}deg)`;
+        startMarker.setLngLat(startCoord).addTo(map);
+        endMarker.setLngLat(endCoord).addTo(map);
+      }
 
-      targetRatioToSeek = pos.ratio;
-
+      // 영상 로드 및 00:00 처음부터 재생
       if (currentVideoId !== videoId) {
         currentVideoId = videoId;
         if (player && typeof player.loadVideoById === 'function') {
@@ -697,54 +627,20 @@
             `<iframe id="yt-player" src="https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
         }
       } else {
-        if (player && typeof player.getDuration === 'function') {
-          const dur = player.getDuration();
-          if (dur > 0) {
-            player.seekTo(dur * targetRatioToSeek, true);
-            targetRatioToSeek = null;
-          }
+        if (player && typeof player.seekTo === 'function') {
+          player.seekTo(0, true);
+          player.playVideo();
         }
       }
-
-      ensureVideoSeek();
     });
   });
-
-  function onPlayerStateChange(event) {
-    clearInterval(syncTimer);
-
-    if (event.data === YT.PlayerState.PLAYING) {
-      if (targetRatioToSeek !== null) {
-        ensureVideoSeek();
-      }
-
-      if (activeLine) {
-        syncTimer = setInterval(() => {
-          if (!player || typeof player.getCurrentTime !== 'function') return;
-          const curTime = player.getCurrentTime();
-          const dur = player.getDuration();
-          if (!dur || dur === 0) return;
-
-          const progress = curTime / dur;
-          const currentLoc = getCoordAlongLinear(activeLine, progress);
-
-          if (currentLoc) {
-            trackingMarker.setLngLat(currentLoc.coord);
-            arrowSvg.style.transform = `rotate(${currentLoc.bearing}deg)`;
-          }
-        }, 300);
-      }
-    }
-  }
 
   function closePlayer() {
     document.getElementById('player-panel').style.display = 'none';
     if (isSplitMode) toggleSplitMode();
     if (player && typeof player.stopVideo === 'function') player.stopVideo();
-    clearInterval(syncTimer);
-    clearInterval(seekPoller);
-    trackingMarker.remove();
-    targetRatioToSeek = null;
+    startMarker.remove();
+    endMarker.remove();
     currentVideoId = null;
     updateActiveRouteHighlight(null);
     updateHoverHighlight(null);
