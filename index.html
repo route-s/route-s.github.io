@@ -69,6 +69,22 @@
       cursor: pointer; font-size: 16px; line-height: 28px; text-align: center; z-index: 101;
     }
 
+    /* 제비꼬리 화살표 스타일 */
+    .arrow-marker {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      pointer-events: none;
+      transition: transform 0.25s linear;
+    }
+    .arrow-marker svg {
+      width: 100%;
+      height: 100%;
+      filter: drop-shadow(0 0 5px rgba(255, 71, 87, 0.9)) drop-shadow(0 0 2px #000);
+    }
+
     .maplibregl-popup-content {
       background: rgba(15, 17, 21, 0.95);
       color: #fff;
@@ -111,6 +127,7 @@
   let player = null;
   let activeLine = null;
   let trackingMarker = null;
+  let arrowEl = null;
   let syncTimer = null;
   let rawGeojsonData = null;
   let adminHierarchy = {};
@@ -149,14 +166,38 @@
     zoom: 11
   });
 
-  const markerEl = document.createElement('div');
-  markerEl.style.width = '14px';
-  markerEl.style.height = '14px';
-  markerEl.style.borderRadius = '50%';
-  markerEl.style.backgroundColor = '#ff4757';
-  markerEl.style.border = '2px solid #ffffff';
-  markerEl.style.boxShadow = '0 0 10px #ff4757';
-  trackingMarker = new maplibregl.Marker({ element: markerEl });
+  // 빨간색 제비꼬리 화살표 SVG 마커 생성
+  arrowEl = document.createElement('div');
+  arrowEl.className = 'arrow-marker';
+  arrowEl.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none">
+      <path d="M12 2L21 21L12 16.5L3 21L12 2Z" fill="#ff4757" stroke="#ffffff" stroke-width="1.8" stroke-linejoin="round"/>
+    </svg>
+  `;
+  trackingMarker = new maplibregl.Marker({ element: arrowEl, rotationAlignment: 'map' });
+
+  // 위치 및 방향(회전각) 갱신 헬퍼 함수
+  function updateMarkerPosition(currentLen, totalLen) {
+    if (!activeLine || totalLen <= 0) return;
+
+    const currentPos = turf.along(activeLine, currentLen, { units: 'kilometers' });
+    
+    // 진행 방향을 구하기 위해 살짝 앞 지점(15m 앞) 좌표 계산
+    const delta = Math.min(0.015, (totalLen - currentLen) / 2);
+    let targetLen = currentLen + delta;
+    if (targetLen > totalLen) targetLen = totalLen;
+
+    const lookAheadPos = turf.along(activeLine, targetLen, { units: 'kilometers' });
+
+    // 방위각(Bearing) 연산
+    let bearing = 0;
+    if (currentLen < totalLen) {
+      bearing = turf.bearing(currentPos, lookAheadPos);
+    }
+
+    trackingMarker.setLngLat(currentPos.geometry.coordinates);
+    trackingMarker.setRotation(bearing);
+  }
 
   map.on('load', () => {
     fetch('./routes.geojson')
@@ -164,7 +205,6 @@
       .then(data => {
         rawGeojsonData = data;
 
-        // 사전 가공된 속성 기반 트리 구축 (연산 시간 0.01초)
         rawGeojsonData.features.forEach((f, idx) => {
           f.id = idx;
           const p = f.properties;
@@ -254,9 +294,33 @@
         }
       }, 700);
 
-      trackingMarker.setLngLat(snapped.geometry.coordinates).addTo(map);
+      trackingMarker.addTo(map);
+      updateMarkerPosition(curLen, totalLen);
     });
   });
+
+  function onPlayerStateChange(event) {
+    clearInterval(syncTimer);
+    if (event.data === YT.PlayerState.PLAYING && activeLine) {
+      syncTimer = setInterval(() => {
+        const curTime = player.getCurrentTime();
+        const dur = player.getDuration();
+        if (!dur || dur === 0) return;
+
+        const totalLen = turf.length(activeLine, { units: 'kilometers' });
+        const targetLen = totalLen * (curTime / dur);
+
+        updateMarkerPosition(targetLen, totalLen);
+      }, 500);
+    }
+  }
+
+  function closePlayer() {
+    document.getElementById('player-panel').style.display = 'none';
+    if (player && typeof player.stopVideo === 'function') player.stopVideo();
+    clearInterval(syncTimer);
+    trackingMarker.remove();
+  }
 
   const countrySelect = document.getElementById('country-select');
   const sidoSelect = document.getElementById('sido-select');
@@ -343,30 +407,6 @@
       const bbox = turf.bbox(fc);
       map.fitBounds(bbox, { padding: 80, maxZoom: 14, duration: 800 });
     }
-  }
-
-  function onPlayerStateChange(event) {
-    clearInterval(syncTimer);
-    if (event.data === YT.PlayerState.PLAYING && activeLine) {
-      syncTimer = setInterval(() => {
-        const curTime = player.getCurrentTime();
-        const dur = player.getDuration();
-        if (!dur || dur === 0) return;
-
-        const totalLen = turf.length(activeLine, { units: 'kilometers' });
-        const targetLen = totalLen * (curTime / dur);
-
-        const currentPos = turf.along(activeLine, targetLen, { units: 'kilometers' });
-        trackingMarker.setLngLat(currentPos.geometry.coordinates);
-      }, 500);
-    }
-  }
-
-  function closePlayer() {
-    document.getElementById('player-panel').style.display = 'none';
-    if (player && typeof player.stopVideo === 'function') player.stopVideo();
-    clearInterval(syncTimer);
-    trackingMarker.remove();
   }
 </script>
 </body>
