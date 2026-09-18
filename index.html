@@ -42,13 +42,6 @@
       cursor: not-allowed;
     }
 
-    #loading-badge {
-      font-size: 11px;
-      color: #00ffff;
-      margin-left: 4px;
-      display: inline-block;
-    }
-
     #player-panel {
       position: absolute;
       top: 15px;
@@ -99,7 +92,6 @@
   <select id="sigungu-select" class="filter-select" disabled>
     <option value="ALL">3단계: 시·군·구 전체</option>
   </select>
-  <span id="loading-badge">동기화 중...</span>
 </div>
 
 <div id="map"></div>
@@ -166,158 +158,48 @@
   markerEl.style.boxShadow = '0 0 10px #ff4757';
   trackingMarker = new maplibregl.Marker({ element: markerEl });
 
-  const KOREA_SIG_URL = 'https://raw.githubusercontent.com/southkorea/southkorea-maps/master/kostat/2018/json/skorea-municipalities-2018-geo.json';
-  const WORLD_COUNTRIES_URL = 'https://d2ad6b4ur7yvpq.cloudfront.net/naturalearth-3.3.0/ne_110m_admin_0_countries.geojson';
-
-  const KOR_SIDO_CODE_MAP = {
-    "11": "서울특별시", "21": "부산광역시", "22": "대구광역시", "23": "인천광역시",
-    "24": "광주광역시", "25": "대전광역시", "26": "울산광역시", "29": "세종특별자치시",
-    "31": "경기도", "32": "강원특별자치도", "33": "충청북도", "34": "충청남도",
-    "35": "전북특별자치도", "36": "전라남도", "37": "경상북도", "38": "경상남도", "39": "제주특별자치도"
-  };
-
-  const COUNTRY_NAME_KO = {
-    "South Korea": "대한민국", "Korea": "대한민국", "Republic of Korea": "대한민국", "KOR": "대한민국",
-    "Japan": "일본", "JPN": "일본", "Taiwan": "대만", "TWN": "대만",
-    "United States": "미국", "United States of America": "미국", "USA": "미국",
-    "Vietnam": "베트남", "Viet Nam": "베트남", "VNM": "베트남",
-    "China": "중국", "CHN": "중국", "Thailand": "태국", "THA": "태국",
-    "Singapore": "싱가포르", "SGP": "싱가포르", "Hong Kong": "홍콩", "HKG": "홍콩",
-    "United Kingdom": "영국", "GBR": "영국", "France": "프랑스", "FRA": "프랑스",
-    "Germany": "독일", "DEU": "독일", "Italy": "이탈리아", "ITA": "이탈리아",
-    "Canada": "캐나다", "CAN": "캐나다", "Australia": "호주", "AUS": "호주"
-  };
-
   map.on('load', () => {
-    Promise.all([
-      fetch('./routes.geojson').then(r => r.json()),
-      fetch(KOREA_SIG_URL).then(r => r.json()).catch(() => null),
-      fetch(WORLD_COUNTRIES_URL).then(r => r.json()).catch(() => null)
-    ]).then(([routesData, korSigData, worldData]) => {
-      rawGeojsonData = routesData;
+    fetch('./routes.geojson')
+      .then(res => res.json())
+      .then(data => {
+        rawGeojsonData = data;
 
-      // 1. 시군구 폴리곤에 BBOX 사전 캐싱 (연산 속도 10배 향상)
-      if (korSigData) {
-        korSigData.features.forEach(poly => {
-          poly._bbox = turf.bbox(poly); // [minX, minY, maxX, maxY]
-          const code = String(poly.properties.code || "");
-          poly._sido = KOR_SIDO_CODE_MAP[code.substring(0, 2)] || "기타시도";
-        });
-      }
+        // 사전 가공된 속성 기반 트리 구축 (연산 시간 0.01초)
+        rawGeojsonData.features.forEach((f, idx) => {
+          f.id = idx;
+          const p = f.properties;
+          const c = p.country || "대한민국";
+          const sidos = (p.sido || "").split(',').filter(Boolean);
+          const sigs = (p.sigungu || "").split(',').filter(Boolean);
 
-      // 2. 세계 국가 데이터 BBOX 사전 캐싱
-      if (worldData) {
-        worldData.features.forEach(poly => {
-          poly._bbox = turf.bbox(poly);
-          const eng = poly.properties.name || poly.properties.ADMIN || poly.properties.SOV_A3 || "";
-          poly._nameKo = COUNTRY_NAME_KO[eng] || eng;
-        });
-      }
-
-      // 3. 고속 공간 인덱스 기반 매핑
-      rawGeojsonData.features.forEach((f, idx) => {
-        f.id = idx;
-        const coords = turf.coordAll(f);
-        if (!coords || coords.length === 0) return;
-
-        const firstPt = coords[0];
-        const lng = firstPt[0];
-        const lat = firstPt[1];
-
-        let countryName = "기타해외";
-        const sidoSet = new Set();
-        const sigunguSet = new Set();
-
-        const isKR = (lng >= 124.0 && lng <= 132.0 && lat >= 33.0 && lat <= 38.9);
-        const isJapan = (lng >= 122.5 && lng <= 154.0 && lat >= 24.0 && lat <= 46.0 && !isKR);
-
-        if (isKR) {
-          countryName = "대한민국";
-        } else if (isJapan) {
-          countryName = "일본";
-        } else if (worldData) {
-          for (let cp of worldData.features) {
-            const b = cp._bbox;
-            if (lng >= b[0] && lng <= b[2] && lat >= b[1] && lat <= b[3]) {
-              if (turf.booleanPointInPolygon(turf.point(firstPt), cp)) {
-                countryName = cp._nameKo;
-                break;
-              }
-            }
+          if (!adminHierarchy[c]) adminHierarchy[c] = {};
+          if (c === "대한민국") {
+            sidos.forEach(sd => {
+              if (!adminHierarchy[c][sd]) adminHierarchy[c][sd] = new Set();
+              sigs.forEach(sg => adminHierarchy[c][sd].add(sg));
+            });
           }
-        }
+        });
 
-        if (countryName === "대한민국" && korSigData) {
-          // 선분에서 시작/중간/끝 등 핵심 5개 포인트만 샘플링 (충분한 정밀도 + 극단적 속도 개선)
-          const sampleIndices = [0];
-          if (coords.length > 2) sampleIndices.push(Math.floor(coords.length / 2));
-          if (coords.length > 1) sampleIndices.push(coords.length - 1);
+        map.addSource('routes', {
+          type: 'geojson',
+          data: rawGeojsonData
+        });
 
-          sampleIndices.forEach(i => {
-            const ptCoords = coords[i];
-            const px = ptCoords[0];
-            const py = ptCoords[1];
-            const pt = turf.point(ptCoords);
-
-            for (let poly of korSigData.features) {
-              const b = poly._bbox;
-              // 1차: 사각형 BBOX 내에 점이 있을 때만 정밀 연산 진입
-              if (px >= b[0] && px <= b[2] && py >= b[1] && py <= b[3]) {
-                if (turf.booleanPointInPolygon(pt, poly)) {
-                  sidoSet.add(poly._sido);
-                  sigunguSet.add(poly.properties.name);
-                }
-              }
-            }
-          });
-
-          // 제주항 등 해안선 외곽 보정 (제주권 좌표 범위면 제주 제주시 즉시 지정)
-          if (sidoSet.size === 0) {
-            if (lat >= 33.1 && lat <= 33.6 && lng >= 126.1 && lng <= 127.0) {
-              sidoSet.add("제주특별자치도");
-              sigunguSet.add(lat >= 33.35 ? "제주시" : "서귀포시");
-            } else {
-              sidoSet.add("기타시도");
-              sigunguSet.add("기타시군");
-            }
+        map.addLayer({
+          id: 'routes-line',
+          type: 'line',
+          source: 'routes',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': '#00ffff',
+            'line-width': 2.8,
+            'line-opacity': 0.85
           }
-        }
+        });
 
-        f.properties.country = countryName;
-        f.properties.sidoList = Array.from(sidoSet);
-        f.properties.sigunguList = Array.from(sigunguSet);
-        f.properties.sido_str = f.properties.sidoList.join(', ');
-        f.properties.sigungu_str = f.properties.sigunguList.join(', ');
-
-        if (!adminHierarchy[countryName]) adminHierarchy[countryName] = {};
-        if (countryName === "대한민국") {
-          f.properties.sidoList.forEach(sido => {
-            if (!adminHierarchy[countryName][sido]) adminHierarchy[countryName][sido] = new Set();
-            f.properties.sigunguList.forEach(sig => adminHierarchy[countryName][sido].add(sig));
-          });
-        }
+        buildDynamicFilters();
       });
-
-      map.addSource('routes', {
-        type: 'geojson',
-        data: rawGeojsonData
-      });
-
-      map.addLayer({
-        id: 'routes-line',
-        type: 'line',
-        source: 'routes',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: {
-          'line-color': '#00ffff',
-          'line-width': 2.8,
-          'line-opacity': 0.85
-        }
-      });
-
-      buildDynamicFilters();
-      document.getElementById('loading-badge').style.display = 'none';
-    });
 
     const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
     map.on('mouseenter', 'routes-line', (e) => {
@@ -326,7 +208,7 @@
       const title = props.name || props.Name || '도보 코스';
       let locTag = '';
       if (props.country === '대한민국') {
-        locTag = `<br><span style="color:#aaa; font-size:11px;">[${props.sido_str} ${props.sigungu_str}]</span>`;
+        locTag = `<br><span style="color:#aaa; font-size:11px;">[${props.sido} ${props.sigungu}]</span>`;
       } else {
         locTag = `<br><span style="color:#aaa; font-size:11px;">[${props.country}]</span>`;
       }
@@ -439,10 +321,12 @@
       const p = f.properties;
       if (c !== 'ALL' && p.country !== c) return false;
       if (c === '대한민국' && sd !== 'ALL') {
-        if (!p.sidoList || !p.sidoList.includes(sd)) return false;
+        const sidos = (p.sido || "").split(',');
+        if (!sidos.includes(sd)) return false;
       }
       if (c === '대한민국' && sd !== 'ALL' && sgg !== 'ALL') {
-        if (!p.sigunguList || !p.sigunguList.includes(sgg)) return false;
+        const sigs = (p.sigungu || "").split(',');
+        if (!sigs.includes(sgg)) return false;
       }
       return true;
     });
@@ -457,7 +341,7 @@
     if (filteredFeatures.length > 0) {
       const fc = turf.featureCollection(filteredFeatures);
       const bbox = turf.bbox(fc);
-      map.fitBounds(bbox, { padding: 80, maxZoom: 14, duration: 1000 });
+      map.fitBounds(bbox, { padding: 80, maxZoom: 14, duration: 800 });
     }
   }
 
