@@ -69,7 +69,6 @@
       cursor: pointer; font-size: 16px; line-height: 28px; text-align: center; z-index: 101;
     }
 
-    /* 제비꼬리 화살표 스타일 */
     .arrow-marker {
       width: 24px;
       height: 24px;
@@ -166,7 +165,6 @@
     zoom: 11
   });
 
-  // 빨간색 제비꼬리 화살표 SVG 마커 생성
   arrowEl = document.createElement('div');
   arrowEl.className = 'arrow-marker';
   arrowEl.innerHTML = `
@@ -176,20 +174,16 @@
   `;
   trackingMarker = new maplibregl.Marker({ element: arrowEl, rotationAlignment: 'map' });
 
-  // 위치 및 방향(회전각) 갱신 헬퍼 함수
   function updateMarkerPosition(currentLen, totalLen) {
     if (!activeLine || totalLen <= 0) return;
 
     const currentPos = turf.along(activeLine, currentLen, { units: 'kilometers' });
-    
-    // 진행 방향을 구하기 위해 살짝 앞 지점(15m 앞) 좌표 계산
     const delta = Math.min(0.015, (totalLen - currentLen) / 2);
     let targetLen = currentLen + delta;
     if (targetLen > totalLen) targetLen = totalLen;
 
     const lookAheadPos = turf.along(activeLine, targetLen, { units: 'kilometers' });
 
-    // 방위각(Bearing) 연산
     let bearing = 0;
     if (currentLen < totalLen) {
       bearing = turf.bearing(currentPos, lookAheadPos);
@@ -260,6 +254,7 @@
       hoverPopup.remove();
     });
 
+    // 코스 클릭 시 자동 줌인 및 영상 동기화
     map.on('click', 'routes-line', (e) => {
       activeLine = e.features[0];
       const props = activeLine.properties;
@@ -274,6 +269,15 @@
         return;
       }
 
+      // 1. 소축척 상태일 때 클릭한 경로로 자동 줌인 (FitBounds)
+      const lineBbox = turf.bbox(activeLine);
+      map.fitBounds(lineBbox, {
+        padding: { top: 70, bottom: 70, left: 70, right: 420 }, // 우측 플레이어 패널 공간 확보
+        maxZoom: 15.5, // 너무 과도하게 확대되지 않는 최적 도보 축척
+        duration: 1200 // 부드러운 카메라 전환
+      });
+
+      // 2. 영상 플레이어 표시 및 로드
       document.getElementById('player-panel').style.display = 'flex';
       document.getElementById('video-title').innerText = title;
 
@@ -281,6 +285,7 @@
         player.loadVideoById(videoId);
       }
 
+      // 3. 클릭 위치 스냅 및 영상 시간 동기화
       const clickedCoords = [e.lngLat.lng, e.lngLat.lat];
       const snapped = turf.nearestPointOnLine(activeLine, turf.point(clickedCoords));
       const totalLen = turf.length(activeLine, { units: 'kilometers' });
