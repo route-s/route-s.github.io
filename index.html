@@ -92,7 +92,6 @@
       cursor: not-allowed;
     }
 
-    /* 검색 입력창 스타일 */
     .search-input {
       background: #252836;
       color: #fff;
@@ -101,7 +100,8 @@
       padding: 6px 10px;
       font-size: 12.5px;
       outline: none;
-      width: 150px;
+      flex: 1;
+      min-width: 140px;
     }
     .search-input::placeholder { color: #888; }
     .search-input:focus { border-color: #00ffff; }
@@ -142,6 +142,7 @@
       display: flex;
       align-items: center;
       gap: 4px;
+      white-space: nowrap;
     }
     .action-btn:hover { background: #2f3346; }
 
@@ -232,10 +233,21 @@
       display: flex;
       flex-direction: column;
     }
+    
+    /* 리스트 상단 컨트롤 바 (검색 및 정렬 위치) */
+    #list-controls-bar {
+      max-width: 900px;
+      width: calc(100% - 30px);
+      margin: 15px auto 5px auto;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
     #list-scroll-area {
       flex: 1;
       overflow-y: auto;
-      padding: 15px;
+      padding: 10px 15px 15px 15px;
       max-width: 900px;
       width: 100%;
       margin: 0 auto;
@@ -302,13 +314,12 @@
         gap: 4px;
       }
       #logo-icon { height: 20px; }
-      .filter-select, .dropdown-btn, .action-btn, .search-input {
+      .filter-select, .dropdown-btn, .action-btn {
         flex: 1;
         min-width: 0;
         padding: 5px 4px;
         font-size: 11px;
       }
-      .search-input { width: 110px; }
       #player-panel {
         top: 60px;
         left: 10px;
@@ -316,8 +327,9 @@
         width: calc(100% - 20px);
         max-width: 100%;
       }
-      #list-view-container { padding-top: 115px; }
+      #list-view-container { padding-top: 65px; }
       #list-player-area { height: 35vh; }
+      #list-controls-bar { width: calc(100% - 20px); margin: 10px auto 5px auto; }
     }
 
     body.split-mode #app-container { display: flex; flex-direction: column; }
@@ -369,11 +381,18 @@
           <button id="list-autoplay-btn" class="action-btn" onclick="toggleAutoPlay()">▶ 연속재생: 켜짐</button>
         </div>
       </div>
+
+      <!-- 리스트 상단 전용 컨트롤 바 (검색창 + 정렬 버튼) -->
+      <div id="list-controls-bar">
+        <input type="text" id="search-input" class="search-input" placeholder="제목 또는 번호 검색" oninput="renderRouteList()" onkeydown="if(event.key==='Enter') { this.blur(); renderRouteList(); }">
+        <button id="sort-order-btn" class="action-btn" onclick="toggleSortOrder()" title="정렬 순서 변경">🔄 과거순</button>
+      </div>
+
       <div id="list-scroll-area"></div>
     </div>
   </div>
 
-  <!-- MAP 전용 상단 상태바 -->
+  <!-- MAP 전용 상단 상태바 (지저분하지 않고 깔끔하게 유지) -->
   <div id="map-filter-container" class="filter-container">
     <img id="logo-icon" src="./logo.png" alt="ROUTE S" title="ROUTE S 채널 바로가기" onclick="window.open('https://www.youtube.com/@루트에스', '_blank')">
 
@@ -398,7 +417,7 @@
     </div>
   </div>
 
-  <!-- LIST 전용 상단 상태바 (검색 및 정렬 버튼 포함) -->
+  <!-- LIST 전용 상단 상태바 (필터 영역만 깔끔하게 유지) -->
   <div id="list-filter-container" class="filter-container" style="display:none;">
     <img id="logo-icon" src="./logo.png" alt="ROUTE S" title="ROUTE S 채널 바로가기" onclick="window.open('https://www.youtube.com/@루트에스', '_blank')">
 
@@ -421,12 +440,6 @@
       <button class="dropdown-btn" type="button" onclick="toggleListYearDropdown()">📅 연도별 (Years) ▼</button>
       <div class="dropdown-content" id="list-year-checkboxes"></div>
     </div>
-
-    <!-- 검색 입력창 -->
-    <input type="text" id="search-input" class="search-input" placeholder="제목 또는 번호 검색" oninput="applyListFilter()">
-
-    <!-- 리스트형 전용 정렬 버튼 -->
-    <button id="sort-order-btn" class="action-btn" onclick="toggleSortOrder()" title="정렬 순서 변경">🔄 과거순</button>
   </div>
 </div>
 
@@ -446,7 +459,7 @@
   let isSplitMode = false;
   let currentVideoId = null;
   let currentMode = 'map';
-  let sortAscending = true; // true: 과거순(1번부터), false: 최신순
+  let sortAscending = true;
   let isAutoPlayOn = true;
   let currentIndexInFiltered = -1;
 
@@ -1025,7 +1038,6 @@
       const yr = extractYear(f);
       if (yr && !listSelectedYears.has(yr)) return false;
 
-      // 검색어 필터 (제목 또는 번호 일치 여부)
       if (searchVal) {
         const title = (p.name || p.Name || '').toLowerCase();
         const globalIdStr = String(f._globalId);
@@ -1061,7 +1073,7 @@
       const isPlaying = (activeLineId === f.id);
 
       html += `
-        <div class="route-item ${isPlaying ? 'active-playing' : ''}" onclick='currentIndexInFiltered = ${index}; playRouteFeature(rawGeojsonData.features[${f.id}])'>
+        <div class="route-item ${isPlaying ? 'active-playing' : ''}" onclick='currentIndexInFiltered = ${index}; playRouteFeature(rawGeojsonData.features[${f._tempIndex}])'>
           <div class="route-number">${f._globalId}</div>
           <div class="route-details">
             <div class="route-item-title">${title}</div>
