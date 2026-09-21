@@ -47,6 +47,7 @@
       background-color: #1a1a1a;
     }
 
+    /* 상태바 중앙 정렬 및 1줄 고정 */
     .filter-container {
       position: absolute;
       top: 15px;
@@ -220,6 +221,7 @@
     #info-box { padding: 10px 14px; background: rgba(22, 25, 34, 0.98); }
     #video-title { font-size: 14px; font-weight: bold; color: #00ffff; line-height: 1.3; width: 100%; }
 
+    /* 리스트 모드 레이아웃 */
     #list-view-container {
       width: 100%;
       height: 100%;
@@ -598,6 +600,7 @@
     }
   });
 
+  // 모드 전환 시 이전 모드의 영상과 상태를 완벽히 초기화 (대기 상태로 전환)
   function switchMode(mode) {
     currentMode = mode;
     document.querySelectorAll('.mode-btn').forEach(b => {
@@ -609,6 +612,10 @@
     document.getElementById('map-filter-container').style.display = (mode === 'map') ? 'flex' : 'none';
     document.getElementById('list-filter-container').style.display = (mode === 'list') ? 'flex' : 'none';
 
+    activeLineId = null;
+    updateActiveRouteHighlight(null);
+    updateHoverHighlight(null);
+
     if (mode === 'map') {
       if (listPlayer && typeof listPlayer.stopVideo === 'function') {
         listPlayer.stopVideo();
@@ -617,7 +624,11 @@
       map.resize();
       resetMapToInitial();
     } else {
-      closePlayer();
+      closePlayer(); // 지도형 플레이어 패널 닫기 및 정지
+      if (listPlayer && typeof listPlayer.stopVideo === 'function') {
+        listPlayer.stopVideo();
+      }
+      document.getElementById('list-video-title').innerText = "재생 중인 코스가 없습니다.";
       resetListToInitial();
     }
   }
@@ -656,7 +667,7 @@
     renderRouteList();
   }
 
-  // 유튜브 API 글로벌 콜백: 명확한 인스턴스 생성
+  // 유튜브 API 글로벌 콜백: 명확하고 안전한 인스턴스 할당
   function onYouTubeIframeAPIReady() {
     player = new YT.Player('yt-player', {
       height: '100%', width: '100%',
@@ -852,7 +863,6 @@
       return;
     }
 
-    // [수정] _globalId가 누락되지 않도록 안전 장치 추가
     const globalId = activeLine._globalId || (activeLine.id !== undefined ? activeLine.id + 1 : '');
     const title = `${globalId}. ${props.name || props.Name || '도보 코스'}`;
 
@@ -869,8 +879,16 @@
         player.loadVideoById(videoId);
       }
     } else {
+      // [수정] 리스트형 플레이어 인스턴스 검사 및 loadVideoById 강제 실행 보장
       if (listPlayer && typeof listPlayer.loadVideoById === 'function') {
         listPlayer.loadVideoById(videoId);
+      } else {
+        // 만약 초기화 직후여서 객체가 딜레이될 경우를 대비한 안전 재시도
+        setTimeout(() => {
+          if (listPlayer && typeof listPlayer.loadVideoById === 'function') {
+            listPlayer.loadVideoById(videoId);
+          }
+        }, 300);
       }
       renderRouteList();
     }
