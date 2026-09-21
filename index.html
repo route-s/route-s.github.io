@@ -47,7 +47,7 @@
       background-color: #1a1a1a;
     }
 
-    #filter-container {
+    .filter-container {
       position: absolute;
       top: 15px;
       left: 15px;
@@ -91,6 +91,20 @@
       opacity: 0.35;
       cursor: not-allowed;
     }
+
+    /* 검색 입력창 스타일 */
+    .search-input {
+      background: #252836;
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12.5px;
+      outline: none;
+      width: 150px;
+    }
+    .search-input::placeholder { color: #888; }
+    .search-input:focus { border-color: #00ffff; }
 
     .mode-switch {
       background: #252836;
@@ -251,7 +265,7 @@
       font-size: 14px;
       font-weight: bold;
       color: #888;
-      min-width: 45px;
+      min-width: 35px;
     }
     .route-details {
       flex: 1;
@@ -279,7 +293,7 @@
     #split-btn { right: 42px; font-size: 13px; }
 
     @media (max-width: 640px) {
-      #filter-container {
+      .filter-container {
         top: 10px;
         left: 10px;
         right: 10px;
@@ -288,12 +302,13 @@
         gap: 4px;
       }
       #logo-icon { height: 20px; }
-      .filter-select, .dropdown-btn, .action-btn {
+      .filter-select, .dropdown-btn, .action-btn, .search-input {
         flex: 1;
         min-width: 0;
         padding: 5px 4px;
         font-size: 11px;
       }
+      .search-input { width: 110px; }
       #player-panel {
         top: 60px;
         left: 10px;
@@ -358,8 +373,8 @@
     </div>
   </div>
 
-  <!-- 공유 상단 상태바 -->
-  <div id="filter-container">
+  <!-- MAP 전용 상단 상태바 -->
+  <div id="map-filter-container" class="filter-container">
     <img id="logo-icon" src="./logo.png" alt="ROUTE S" title="ROUTE S 채널 바로가기" onclick="window.open('https://www.youtube.com/@루트에스', '_blank')">
 
     <div class="mode-switch">
@@ -367,22 +382,50 @@
       <button id="btn-list-mode" class="mode-btn" onclick="switchMode('list')">📜 LIST</button>
     </div>
 
-    <select id="country-select" class="filter-select">
+    <select id="map-country-select" class="filter-select">
       <option value="ALL">1: 국가 전체 (All)</option>
     </select>
-    <select id="sido-select" class="filter-select" disabled>
+    <select id="map-sido-select" class="filter-select" disabled>
       <option value="ALL">2: 시·도 (State)</option>
     </select>
-    <select id="sigungu-select" class="filter-select" disabled>
+    <select id="map-sigungu-select" class="filter-select" disabled>
       <option value="ALL">3: 시·군·구 (City/Dist.)</option>
     </select>
 
-    <div class="dropdown-multiselect" id="year-dropdown-container">
-      <button class="dropdown-btn" type="button" onclick="toggleYearDropdown()">📅 연도별 (Years) ▼</button>
-      <div class="dropdown-content" id="year-checkboxes"></div>
+    <div class="dropdown-multiselect" id="map-year-dropdown-container">
+      <button class="dropdown-btn" type="button" onclick="toggleMapYearDropdown()">📅 연도별 (Years) ▼</button>
+      <div class="dropdown-content" id="map-year-checkboxes"></div>
+    </div>
+  </div>
+
+  <!-- LIST 전용 상단 상태바 (검색 및 정렬 버튼 포함) -->
+  <div id="list-filter-container" class="filter-container" style="display:none;">
+    <img id="logo-icon" src="./logo.png" alt="ROUTE S" title="ROUTE S 채널 바로가기" onclick="window.open('https://www.youtube.com/@루트에스', '_blank')">
+
+    <div class="mode-switch">
+      <button class="mode-btn" onclick="switchMode('map')">🗺️ MAP</button>
+      <button class="mode-btn active" onclick="switchMode('list')">📜 LIST</button>
     </div>
 
-    <!-- 정렬 토글 버튼 -->
+    <select id="list-country-select" class="filter-select">
+      <option value="ALL">1: 국가 전체 (All)</option>
+    </select>
+    <select id="list-sido-select" class="filter-select" disabled>
+      <option value="ALL">2: 시·도 (State)</option>
+    </select>
+    <select id="list-sigungu-select" class="filter-select" disabled>
+      <option value="ALL">3: 시·군·구 (City/Dist.)</option>
+    </select>
+
+    <div class="dropdown-multiselect" id="list-year-dropdown-container">
+      <button class="dropdown-btn" type="button" onclick="toggleListYearDropdown()">📅 연도별 (Years) ▼</button>
+      <div class="dropdown-content" id="list-year-checkboxes"></div>
+    </div>
+
+    <!-- 검색 입력창 -->
+    <input type="text" id="search-input" class="search-input" placeholder="제목 또는 번호 검색" oninput="applyListFilter()">
+
+    <!-- 리스트형 전용 정렬 버튼 -->
     <button id="sort-order-btn" class="action-btn" onclick="toggleSortOrder()" title="정렬 순서 변경">🔄 과거순</button>
   </div>
 </div>
@@ -398,12 +441,13 @@
   let rawGeojsonData = null;
   let adminHierarchy = {};
   let availableYears = new Set();
-  let selectedYears = new Set();
+  let mapSelectedYears = new Set();
+  let listSelectedYears = new Set();
   let isSplitMode = false;
   let currentVideoId = null;
   let currentMode = 'map';
   let sortAscending = true; // true: 과거순(1번부터), false: 최신순
-  let isAutoPlayOn = true;  // 연속 재생 여부
+  let isAutoPlayOn = true;
   let currentIndexInFiltered = -1;
 
   const SEOUL_DISTRICTS = new Set([
@@ -482,16 +526,11 @@
     return `${val} (${en})`;
   }
 
-  // 텍스트에서 날짜/연도 정보 추출하여 타임스탬프 계산 (정렬용)
   function extractTimestamp(feature) {
     const props = feature.properties || {};
     const text = (props.name || "") + " " + (props.Name || "") + " " + (props.description || "") + " " + (props.Description || "");
-    
-    // 연도 추출 (20xx)
     const yearMatch = text.match(/\b(20\d{2})\b/);
     const year = yearMatch ? parseInt(yearMatch[1], 10) : 2020;
-
-    // 월 추출 (Jan, Feb... 또는 1월~12월)
     const months = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
     let month = 1;
     const mMatch = text.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i);
@@ -501,7 +540,6 @@
       const korMMatch = text.match(/(\d{1,2})월/);
       if (korMMatch) month = parseInt(korMMatch[1], 10);
     }
-
     return year * 100 + month;
   }
 
@@ -536,28 +574,67 @@
     return `[${pairs.join(', ')}]`;
   }
 
-  function toggleYearDropdown() {
-    document.getElementById('year-checkboxes').classList.toggle('show');
+  function toggleMapYearDropdown() {
+    document.getElementById('map-year-checkboxes').classList.toggle('show');
+  }
+
+  function toggleListYearDropdown() {
+    document.getElementById('list-year-checkboxes').classList.toggle('show');
   }
 
   window.addEventListener('click', (e) => {
-    if (!document.getElementById('year-dropdown-container').contains(e.target)) {
-      document.getElementById('year-checkboxes').classList.remove('show');
+    if (!document.getElementById('map-year-dropdown-container').contains(e.target)) {
+      document.getElementById('map-year-checkboxes').classList.remove('show');
+    }
+    if (!document.getElementById('list-year-dropdown-container').contains(e.target)) {
+      document.getElementById('list-year-checkboxes').classList.remove('show');
     }
   });
 
   function switchMode(mode) {
     currentMode = mode;
-    document.getElementById('btn-map-mode').classList.toggle('active', mode === 'map');
-    document.getElementById('btn-list-mode').classList.toggle('active', mode === 'list');
+    document.querySelectorAll('.mode-btn').forEach(b => {
+      b.classList.toggle('active', (mode === 'map' && b.innerText.includes('MAP')) || (mode === 'list' && b.innerText.includes('LIST')));
+    });
+
     document.getElementById('map-pane').classList.toggle('active', mode === 'map');
     document.getElementById('list-pane').classList.toggle('active', mode === 'list');
+    document.getElementById('map-filter-container').style.display = (mode === 'map') ? 'flex' : 'none';
+    document.getElementById('list-filter-container').style.display = (mode === 'list') ? 'flex' : 'none';
 
     if (mode === 'map') {
       map.resize();
+      resetMapToInitial();
     } else {
-      renderRouteList();
+      resetListToInitial();
     }
+  }
+
+  function resetMapToInitial() {
+    const cSel = document.getElementById('map-country-select');
+    const sdSel = document.getElementById('map-sido-select');
+    cSel.value = "대한민국";
+    cSel.dispatchEvent(new Event('change'));
+    sdSel.value = "서울특별시";
+    sdSel.dispatchEvent(new Event('change'));
+  }
+
+  function resetListToInitial() {
+    const cSel = document.getElementById('list-country-select');
+    const sdSel = document.getElementById('list-sido-select');
+    const sgSel = document.getElementById('list-sigungu-select');
+    const searchInput = document.getElementById('search-input');
+
+    if (cSel) cSel.value = "ALL";
+    if (sdSel) { sdSel.value = "ALL"; sdSel.disabled = true; }
+    if (sgSel) { sgSel.value = "ALL"; sgSel.disabled = true; }
+    if (searchInput) searchInput.value = "";
+    
+    availableYears.forEach(yr => listSelectedYears.add(yr));
+    sortAscending = true;
+    document.getElementById('sort-order-btn').innerText = "🔄 과거순";
+
+    renderRouteList();
   }
 
   function toggleSortOrder() {
@@ -587,7 +664,6 @@
     });
   }
 
-  // 유튜브 영상 재생 완료(Ended: 0) 시 다음 영상 자동 재생
   function onPlayerStateChange(event) {
     if (event.data === YT.PlayerState.ENDED && isAutoPlayOn) {
       playNextRoute();
@@ -595,15 +671,13 @@
   }
 
   function playNextRoute() {
-    const currentFiltered = getFilteredFeatures();
-    if (currentFiltered.length === 0) return;
-
-    // 현재 재생 중인 인덱스의 다음 항목 재생
-    currentIndexInFiltered++;
-    if (currentIndexInFiltered >= currentFiltered.length) {
-      currentIndexInFiltered = 0; // 끝까지 가면 처음으로 순환
+    if (currentMode === 'list') {
+      const currentFiltered = getFilteredListFeatures();
+      if (currentFiltered.length === 0) return;
+      currentIndexInFiltered++;
+      if (currentIndexInFiltered >= currentFiltered.length) currentIndexInFiltered = 0;
+      playRouteFeature(currentFiltered[currentIndexInFiltered]);
     }
-    playRouteFeature(currentFiltered[currentIndexInFiltered]);
   }
 
   const map = new maplibregl.Map({
@@ -671,11 +745,6 @@
     }
   }
 
-  const countrySelect = document.getElementById('country-select');
-  const sidoSelect = document.getElementById('sido-select');
-  const sigunguSelect = document.getElementById('sigungu-select');
-  const yearCheckboxesContainer = document.getElementById('year-checkboxes');
-
   map.on('load', () => {
     Promise.all([
       fetch('./routes.geojson?t=' + Date.now()).then(r => r.json()),
@@ -685,16 +754,14 @@
     ]).then(([routesData, worldGeo, sidoGeo, sigunguGeo]) => {
       rawGeojsonData = routesData;
 
-      // 1. 전체 데이터에 시간 순서 기준 영구적인 고유 ID 부여
       rawGeojsonData.features.forEach((f, idx) => {
         f._tempIndex = idx;
         f._timestamp = extractTimestamp(f);
       });
 
-      // 타임스탬프 오름차순(과거->최신)으로 정렬하여 절대 불변의 고유 번호(_globalId) 부여
       rawGeojsonData.features.sort((a, b) => a._timestamp - b._timestamp);
       rawGeojsonData.features.forEach((f, index) => {
-        f.id = index; // 0번부터 시작하므로 실제 표시는 index + 1
+        f.id = index;
         f._globalId = index + 1;
         const p = f.properties || {};
         const c = p.country || "대한민국";
@@ -725,10 +792,16 @@
 
       const sortedYears = Array.from(availableYears).sort((a, b) => b.localeCompare(a));
       sortedYears.forEach(yr => {
-        selectedYears.add(yr);
-        yearCheckboxesContainer.innerHTML += `
+        mapSelectedYears.add(yr);
+        listSelectedYears.add(yr);
+        document.getElementById('map-year-checkboxes').innerHTML += `
           <label class="year-checkbox-label">
-            <input type="checkbox" value="${yr}" checked onchange="onYearCheckboxChange(this)"> ${yr}년
+            <input type="checkbox" value="${yr}" checked onchange="onMapYearChange(this)"> ${yr}년
+          </label>
+        `;
+        document.getElementById('list-year-checkboxes').innerHTML += `
+          <label class="year-checkbox-label">
+            <input type="checkbox" value="${yr}" checked onchange="onListYearChange(this)"> ${yr}년
           </label>
         `;
       });
@@ -739,12 +812,10 @@
       map.addLayer({ id: 'routes-hover-line', type: 'line', source: 'routes', layout: { 'line-join': 'round', 'line-cap': 'round' }, filter: ['==', ['id'], -9999], paint: { 'line-color': '#ffffff', 'line-width': 5.8, 'line-opacity': 0.85 } });
       map.addLayer({ id: 'routes-active-line', type: 'line', source: 'routes', layout: { 'line-join': 'round', 'line-cap': 'round' }, filter: ['==', ['id'], -9999], paint: { 'line-color': '#ffe600', 'line-width': 5.5, 'line-opacity': 1.0 } });
 
-      buildDynamicFilters();
+      buildFilterDropdowns('map');
+      buildFilterDropdowns('list');
 
-      countrySelect.value = "대한민국";
-      countrySelect.dispatchEvent(new Event('change'));
-      sidoSelect.value = "서울특별시";
-      sidoSelect.dispatchEvent(new Event('change'));
+      resetMapToInitial();
     });
 
     const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
@@ -770,8 +841,13 @@
 
     map.on('click', 'routes-hitbox', (e) => {
       const clickedFeat = e.features[0];
-      const currentFiltered = getFilteredFeatures();
-      currentIndexInFiltered = currentFiltered.findIndex(f => f.id === clickedFeat.id);
+      const props = clickedFeat.properties || {};
+      const videoId = extractYouTubeId(props.description || props.Description || '');
+      
+      if (!videoId) {
+        alert("이 코스는 유튜브 영상 연결 준비 중입니다.");
+        return;
+      }
       playRouteFeature(clickedFeat);
     });
   });
@@ -780,13 +856,14 @@
     activeLine = feature;
     activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
     const props = activeLine.properties || {};
-    const title = `${activeLine._globalId}. ${props.name || props.Name || '도보 코스'}`;
     const videoId = extractYouTubeId(props.description || props.Description || '');
 
     if (!videoId) {
-      alert("이 코스에 연결된 유튜브 링크를 추출할 수 없습니다.");
+      alert("이 코스는 유튜브 영상 연결 준비 중입니다.");
       return;
     }
+
+    const title = `${activeLine._globalId}. ${props.name || props.Name || '도보 코스'}`;
 
     updateHoverHighlight(null);
     updateActiveRouteHighlight(activeLineId);
@@ -814,7 +891,6 @@
       }
     }
 
-    // 리스트 뷰일 때 현재 재생 중인 항목 하이라이트 갱신
     if (currentMode === 'list') {
       renderRouteList();
     }
@@ -829,61 +905,111 @@
     updateHoverHighlight(null);
   }
 
-  function onYearCheckboxChange(checkbox) {
-    if (checkbox.checked) selectedYears.add(checkbox.value);
-    else selectedYears.delete(checkbox.value);
-    applyFilter();
+  function onMapYearChange(cb) {
+    if (cb.checked) mapSelectedYears.add(cb.value);
+    else mapSelectedYears.delete(cb.value);
+    applyMapFilter();
   }
 
-  function buildDynamicFilters() {
-    countrySelect.innerHTML = `<option value="ALL">${formatCountryLabel('ALL')}</option>`;
+  function onListYearChange(cb) {
+    if (cb.checked) listSelectedYears.add(cb.value);
+    else listSelectedYears.delete(cb.value);
+    renderRouteList();
+  }
+
+  function buildFilterDropdowns(type) {
+    const cSel = document.getElementById(`${type}-country-select`);
+    cSel.innerHTML = `<option value="ALL">${formatCountryLabel('ALL')}</option>`;
     const countries = Object.keys(adminHierarchy).sort((a, b) => (a === '대한민국' ? -1 : b === '대한민국' ? 1 : a.localeCompare(b)));
     countries.forEach(country => {
-      countrySelect.innerHTML += `<option value="${country}">${formatCountryLabel(country)}</option>`;
+      cSel.innerHTML += `<option value="${country}">${formatCountryLabel(country)}</option>`;
     });
 
-    countrySelect.addEventListener('change', () => {
-      const c = countrySelect.value;
-      sidoSelect.innerHTML = `<option value="ALL">${formatSidoLabel('ALL')}</option>`;
-      sigunguSelect.innerHTML = `<option value="ALL">${formatSigunguLabel('ALL')}</option>`;
+    cSel.addEventListener('change', () => {
+      const c = cSel.value;
+      const sdSel = document.getElementById(`${type}-sido-select`);
+      const sgSel = document.getElementById(`${type}-sigungu-select`);
+      sdSel.innerHTML = `<option value="ALL">${formatSidoLabel('ALL')}</option>`;
+      sgSel.innerHTML = `<option value="ALL">${formatSigunguLabel('ALL')}</option>`;
 
       if (c === '대한민국' && adminHierarchy[c]) {
-        sidoSelect.disabled = false;
+        sdSel.disabled = false;
         SIDO_SORT_ORDER.forEach(sido => {
-          if (adminHierarchy[c][sido]) sidoSelect.innerHTML += `<option value="${sido}">${formatSidoLabel(sido)}</option>`;
+          if (adminHierarchy[c][sido]) sdSel.innerHTML += `<option value="${sido}">${formatSidoLabel(sido)}</option>`;
         });
-        sigunguSelect.disabled = true;
+        sgSel.disabled = true;
       } else {
-        sidoSelect.disabled = true;
-        sigunguSelect.disabled = true;
+        sdSel.disabled = true;
+        sgSel.disabled = true;
       }
-      applyFilter();
+      if (type === 'map') applyMapFilter(); else renderRouteList();
     });
 
-    sidoSelect.addEventListener('change', () => {
-      const c = countrySelect.value;
-      const s = sidoSelect.value;
-      sigunguSelect.innerHTML = `<option value="ALL">${formatSigunguLabel('ALL')}</option>`;
+    document.getElementById(`${type}-sido-select`).addEventListener('change', () => {
+      const c = cSel.value;
+      const s = document.getElementById(`${type}-sido-select`).value;
+      const sgSel = document.getElementById(`${type}-sigungu-select`);
+      sgSel.innerHTML = `<option value="ALL">${formatSigunguLabel('ALL')}</option>`;
 
       if (c === '대한민국' && s !== 'ALL' && adminHierarchy[c] && adminHierarchy[c][s]) {
-        sigunguSelect.disabled = false;
+        sgSel.disabled = false;
         Array.from(adminHierarchy[c][s]).sort().forEach(sig => {
-          sigunguSelect.innerHTML += `<option value="${sig}">${formatSigunguLabel(sig)}</option>`;
+          sgSel.innerHTML += `<option value="${sig}">${formatSigunguLabel(sig)}</option>`;
         });
       } else {
-        sigunguSelect.disabled = true;
+        sgSel.disabled = true;
       }
-      applyFilter();
+      if (type === 'map') applyMapFilter(); else renderRouteList();
     });
 
-    sigunguSelect.addEventListener('change', applyFilter);
+    document.getElementById(`${type}-sigungu-select`).addEventListener('change', () => {
+      if (type === 'map') applyMapFilter(); else renderRouteList();
+    });
   }
 
-  function getFilteredFeatures() {
+  function applyMapFilter() {
+    if (!rawGeojsonData) return;
+    const c = document.getElementById('map-country-select').value;
+    const sd = document.getElementById('map-sido-select').value;
+    const sgg = document.getElementById('map-sigungu-select').value;
+
+    const filtered = rawGeojsonData.features.filter(f => {
+      const p = f.properties || {};
+      if (c !== 'ALL' && p.country !== c) return false;
+      if (c === '대한민국' && sd !== 'ALL') {
+        const sidos = (p.sido || "").split(',').map(s => s.trim());
+        if (!sidos.includes(sd)) return false;
+      }
+      if (c === '대한민국' && sd !== 'ALL' && sgg !== 'ALL') {
+        const sigs = (p.sigungu || "").split(',').map(s => s.trim());
+        if (!sigs.includes(sgg)) return false;
+      }
+      const yr = extractYear(f);
+      if (yr && !mapSelectedYears.has(yr)) return false;
+      return true;
+    });
+
+    const matchedIds = filtered.map(f => f.id);
+    const filterExpression = (c === 'ALL' && mapSelectedYears.size === availableYears.size) ? null : ['in', ['id'], ['literal', matchedIds]];
+    
+    map.setFilter('routes-line', filterExpression);
+    map.setFilter('routes-hitbox', filterExpression);
+
+    if (filtered.length > 0) {
+      try {
+        const fc = turf.featureCollection(filtered);
+        const bbox = turf.bbox(fc);
+        map.fitBounds(bbox, { padding: window.innerWidth <= 640 ? 40 : 80, maxZoom: 15, duration: 800 });
+      } catch(e) {}
+    }
+  }
+
+  function getFilteredListFeatures() {
     if (!rawGeojsonData) return [];
-    const c = countrySelect.value;
-    const sd = sidoSelect.value;
-    const sgg = sigunguSelect.value;
+    const c = document.getElementById('list-country-select').value;
+    const sd = document.getElementById('list-sido-select').value;
+    const sgg = document.getElementById('list-sigungu-select').value;
+    const searchVal = document.getElementById('search-input').value.trim().toLowerCase();
 
     let filtered = rawGeojsonData.features.filter(f => {
       const p = f.properties || {};
@@ -897,11 +1023,20 @@
         if (!sigs.includes(sgg)) return false;
       }
       const yr = extractYear(f);
-      if (yr && !selectedYears.has(yr)) return false;
+      if (yr && !listSelectedYears.has(yr)) return false;
+
+      // 검색어 필터 (제목 또는 번호 일치 여부)
+      if (searchVal) {
+        const title = (p.name || p.Name || '').toLowerCase();
+        const globalIdStr = String(f._globalId);
+        if (!title.includes(searchVal) && !globalIdStr.includes(searchVal)) {
+          return false;
+        }
+      }
+
       return true;
     });
 
-    // 정렬 적용 (오름차순: 과거순, 내림차순: 최신순)
     filtered.sort((a, b) => {
       return sortAscending ? (a._timestamp - b._timestamp) : (b._timestamp - a._timestamp);
     });
@@ -909,30 +1044,9 @@
     return filtered;
   }
 
-  function applyFilter() {
-    const filteredFeatures = getFilteredFeatures();
-    const matchedIds = filteredFeatures.map(f => f.id);
-    const filterExpression = (countrySelect.value === 'ALL' && selectedYears.size === availableYears.size) ? null : ['in', ['id'], ['literal', matchedIds]];
-    
-    map.setFilter('routes-line', filterExpression);
-    map.setFilter('routes-hitbox', filterExpression);
-
-    if (currentMode === 'map' && filteredFeatures.length > 0) {
-      try {
-        const fc = turf.featureCollection(filteredFeatures);
-        const bbox = turf.bbox(fc);
-        map.fitBounds(bbox, { padding: window.innerWidth <= 640 ? 40 : 80, maxZoom: 15, duration: 800 });
-      } catch(e) {}
-    }
-
-    if (currentMode === 'list') {
-      renderRouteList();
-    }
-  }
-
   function renderRouteList() {
     const listScrollArea = document.getElementById('list-scroll-area');
-    const features = getFilteredFeatures();
+    const features = getFilteredListFeatures();
 
     if (features.length === 0) {
       listScrollArea.innerHTML = `<div style="text-align:center; color:#888; padding:30px;">조건에 일치하는 워킹 코스가 없습니다.</div>`;
@@ -948,7 +1062,7 @@
 
       html += `
         <div class="route-item ${isPlaying ? 'active-playing' : ''}" onclick='currentIndexInFiltered = ${index}; playRouteFeature(rawGeojsonData.features[${f.id}])'>
-          <div class="route-number">${f._globalId}번</div>
+          <div class="route-number">${f._globalId}</div>
           <div class="route-details">
             <div class="route-item-title">${title}</div>
             <div class="route-item-meta">${locTag}</div>
