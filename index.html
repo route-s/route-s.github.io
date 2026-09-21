@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>ROUTE S - 아카이브 지도</title>
+  <title>ROUTE S - 아카이브 지도 & 리스트</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
@@ -20,12 +20,22 @@
       position: relative;
     }
 
+    /* 뷰 모드 컨테이너 (MAP vs LIST) */
+    .view-pane {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      display: none;
+    }
+    .view-pane.active {
+      display: flex;
+      flex-direction: column;
+    }
+
     #map-wrapper {
       flex: 1;
       width: 100%;
       height: 100%;
       position: relative;
-      overflow: hidden;
     }
     #map {
       width: 100%;
@@ -38,6 +48,7 @@
       background-color: #1a1a1a;
     }
 
+    /* 상단 통합 상태바 */
     #filter-container {
       position: absolute;
       top: 15px;
@@ -56,7 +67,6 @@
       flex-wrap: wrap;
     }
 
-    /* 루트에스 로고 스타일 (상태바 세로폭에 맞춘 미니멀 규격) */
     #logo-icon {
       height: 24px;
       width: auto;
@@ -82,6 +92,32 @@
     .filter-select:disabled {
       opacity: 0.35;
       cursor: not-allowed;
+    }
+
+    /* 모드 전환 스위치 (Map / List Toggle) */
+    .mode-switch {
+      background: #252836;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 6px;
+      padding: 3px;
+      display: flex;
+      gap: 2px;
+      cursor: pointer;
+    }
+    .mode-btn {
+      background: transparent;
+      border: none;
+      color: #aaa;
+      padding: 4px 8px;
+      font-size: 11.5px;
+      font-weight: bold;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .mode-btn.active {
+      background: #00ffff;
+      color: #000;
     }
 
     .dropdown-multiselect {
@@ -130,6 +166,7 @@
     .year-checkbox-label:hover { color: #00ffff; }
     .year-checkbox-label input { accent-color: #00ffff; cursor: pointer; }
 
+    /* 지도 모드 우측 상단 플레이어 패널 */
     #player-panel {
       position: absolute;
       top: 70px;
@@ -152,6 +189,68 @@
     #info-box { padding: 12px 16px; background: rgba(22, 25, 34, 0.98); }
     #video-title { font-size: 14.5px; font-weight: bold; color: #00ffff; line-height: 1.3; }
 
+    /* 리스트 모드 레이아웃 */
+    #list-view-container {
+      width: 100%;
+      height: 100%;
+      background: #14161c;
+      display: flex;
+      flex-direction: column;
+      padding-top: 75px; /* 상단 상태바 공간 확보 */
+    }
+    #list-player-area {
+      width: 100%;
+      height: 45vh;
+      background: #000;
+      position: relative;
+      flex-shrink: 0;
+      border-bottom: 2px solid #00ffff;
+    }
+    #list-scroll-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 15px;
+      max-width: 900px;
+      width: 100%;
+      margin: 0 auto;
+    }
+    .route-item {
+      background: rgba(26, 29, 38, 0.85);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      transition: all 0.2s;
+    }
+    .route-item:hover {
+      background: rgba(0, 206, 209, 0.15);
+      border-color: #00ffff;
+      transform: translateY(-1px);
+    }
+    .route-number {
+      font-size: 14px;
+      font-weight: bold;
+      color: #888;
+      min-width: 35px;
+    }
+    .route-details {
+      flex: 1;
+    }
+    .route-item-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+    .route-item-meta {
+      font-size: 11.5px;
+      color: #00ffff;
+    }
+
     .panel-btn {
       position: absolute; top: 8px; background: rgba(0,0,0,0.6);
       color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px;
@@ -172,9 +271,7 @@
         padding: 6px 8px;
         gap: 4px;
       }
-      #logo-icon {
-        height: 20px;
-      }
+      #logo-icon { height: 20px; }
       .filter-select, .dropdown-btn {
         flex: 1;
         min-width: 0;
@@ -188,33 +285,22 @@
         width: calc(100% - 20px);
         max-width: 100%;
       }
+      #list-view-container {
+        padding-top: 115px; /* 모바일에서 2줄이 될 수 있으므로 넉넉히 확보 */
+      }
+      #list-player-area {
+        height: 35vh;
+      }
     }
 
-    body.split-mode #app-container {
-      display: flex;
-      flex-direction: column;
-    }
+    body.split-mode #app-container { display: flex; flex-direction: column; }
     body.split-mode #player-panel {
-      position: relative;
-      top: 0; left: 0; right: 0;
-      width: 100%;
-      max-width: 100%;
-      height: 50vh;
-      border-radius: 0;
-      border: none;
-      border-bottom: 2px solid #00ffff;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.9);
-      display: flex;
+      position: relative; top: 0; left: 0; right: 0; width: 100%; max-width: 100%;
+      height: 50vh; border-radius: 0; border: none; border-bottom: 2px solid #00ffff;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.9); display: flex;
     }
-    body.split-mode #player-container {
-      flex: 1;
-      height: calc(100% - 50px);
-    }
-    body.split-mode #map-wrapper {
-      flex: none;
-      height: 50vh;
-      width: 100%;
-    }
+    body.split-mode #player-container { flex: 1; height: calc(100% - 50px); }
+    body.split-mode #map-wrapper { flex: none; height: 50vh; width: 100%; }
 
     .maplibregl-popup-content {
       background: rgba(15, 17, 21, 0.95);
@@ -230,36 +316,57 @@
 <body>
 
 <div id="app-container">
-  <div id="player-panel">
-    <button id="split-btn" class="panel-btn" onclick="toggleSplitMode()" title="화면 상하 분할 / 팝업 토글">◫</button>
-    <button id="close-btn" class="panel-btn" onclick="closePlayer()" title="닫기">×</button>
-    <div id="player-container"><div id="yt-player"></div></div>
-    <div id="info-box">
-      <div id="video-title">코스 명칭</div>
+  <!-- 1. MAP VIEW PANE -->
+  <div id="map-pane" class="view-pane active">
+    <div id="player-panel">
+      <button id="split-btn" class="panel-btn" onclick="toggleSplitMode()" title="화면 상하 분할 / 팝업 토글">◫</button>
+      <button id="close-btn" class="panel-btn" onclick="closePlayer()" title="닫기">×</button>
+      <div id="player-container"><div id="yt-player"></div></div>
+      <div id="info-box">
+        <div id="video-title">코스 명칭</div>
+      </div>
+    </div>
+    <div id="map-wrapper">
+      <div id="map"></div>
     </div>
   </div>
 
-  <div id="map-wrapper">
-    <div id="filter-container">
-      <!-- 상태바 가장 좌측에 배치된 ROUTE S 로고 (클릭 시 유튜브 채널로 이동) -->
-      <img id="logo-icon" src="./logo.png" alt="ROUTE S" title="ROUTE S 채널 바로가기" onclick="window.open('https://www.youtube.com/@루트에스', '_blank')">
-
-      <select id="country-select" class="filter-select">
-        <option value="ALL">1: 국가 전체 (All)</option>
-      </select>
-      <select id="sido-select" class="filter-select" disabled>
-        <option value="ALL">2: 시·도 (State)</option>
-      </select>
-      <select id="sigungu-select" class="filter-select" disabled>
-        <option value="ALL">3: 시·군·구 (City/Dist.)</option>
-      </select>
-
-      <div class="dropdown-multiselect" id="year-dropdown-container">
-        <button class="dropdown-btn" type="button" onclick="toggleYearDropdown()">📅 연도별 (Years) ▼</button>
-        <div class="dropdown-content" id="year-checkboxes"></div>
+  <!-- 2. LIST VIEW PANE -->
+  <div id="list-pane" class="view-pane">
+    <div id="list-view-container">
+      <div id="list-player-area">
+        <div id="list-yt-container" style="width:100%; height:100%;"></div>
+      </div>
+      <div id="list-scroll-area">
+        <!-- 동적 리스트가 여기에 렌더링됩니다 -->
       </div>
     </div>
-    <div id="map"></div>
+  </div>
+
+  <!-- 공유 상단 상태바 (모든 뷰에서 공용 작동) -->
+  <div id="filter-container">
+    <img id="logo-icon" src="./logo.png" alt="ROUTE S" title="ROUTE S 채널 바로가기" onclick="window.open('https://www.youtube.com/@루트에스', '_blank')">
+
+    <!-- MAP / LIST 모드 전환 스위치 -->
+    <div class="mode-switch">
+      <button id="btn-map-mode" class="mode-btn active" onclick="switchMode('map')">🗺️ MAP</button>
+      <button id="btn-list-mode" class="mode-btn" onclick="switchMode('list')">📜 LIST</button>
+    </div>
+
+    <select id="country-select" class="filter-select">
+      <option value="ALL">1: 국가 전체 (All)</option>
+    </select>
+    <select id="sido-select" class="filter-select" disabled>
+      <option value="ALL">2: 시·도 (State)</option>
+    </select>
+    <select id="sigungu-select" class="filter-select" disabled>
+      <option value="ALL">3: 시·군·구 (City/Dist.)</option>
+    </select>
+
+    <div class="dropdown-multiselect" id="year-dropdown-container">
+      <button class="dropdown-btn" type="button" onclick="toggleYearDropdown()">📅 연도별 (Years) ▼</button>
+      <div class="dropdown-content" id="year-checkboxes"></div>
+    </div>
   </div>
 </div>
 
@@ -267,6 +374,7 @@
 
 <script>
   let player = null;
+  let listPlayer = null;
   let activeLine = null;
   let activeLineId = null;
   let hoveredLineId = null;
@@ -276,6 +384,7 @@
   let selectedYears = new Set();
   let isSplitMode = false;
   let currentVideoId = null;
+  let currentMode = 'map'; // 'map' or 'list'
 
   const SEOUL_DISTRICTS = new Set([
     "종로구", "중구", "용산구", "성동구", "광진구", "동대문구", "중랑구", "성북구",
@@ -398,27 +507,34 @@
     }
   });
 
+  function switchMode(mode) {
+    currentMode = mode;
+    document.getElementById('btn-map-mode').classList.toggle('active', mode === 'map');
+    document.getElementById('btn-list-mode').classList.toggle('active', mode === 'list');
+    document.getElementById('map-pane').classList.toggle('active', mode === 'map');
+    document.getElementById('list-pane').classList.toggle('active', mode === 'list');
+
+    if (mode === 'map') {
+      map.resize();
+    } else {
+      renderRouteList();
+    }
+  }
+
   function onYouTubeIframeAPIReady() {
     player = new YT.Player('yt-player', {
-      height: '100%',
-      width: '100%',
-      playerVars: { 
-        'autoplay': 1, 
-        'controls': 1, 
-        'rel': 0,
-        'enablejsapi': 1,
-        'origin': window.location.origin 
-      }
+      height: '100%', width: '100%',
+      playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'enablejsapi': 1, 'origin': window.location.origin }
+    });
+    listPlayer = new YT.Player('list-yt-container', {
+      height: '100%', width: '100%',
+      playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'enablejsapi': 1, 'origin': window.location.origin }
     });
   }
 
   const map = new maplibregl.Map({
     container: 'map',
-    scrollZoom: true,
-    boxZoom: true,
-    dragRotate: true,
-    dragPan: true,
-    maxZoom: 19,
+    scrollZoom: true, boxZoom: true, dragRotate: true, dragPan: true, maxZoom: 19,
     style: {
       version: 8,
       sources: {
@@ -433,24 +549,12 @@
           attribution: '&copy; OpenStreetMap contributors'
         }
       },
-      layers: [
-        { 
-          id: 'osm-tiles-layer', 
-          type: 'raster', 
-          source: 'osm-tiles', 
-          minzoom: 0, 
-          maxzoom: 19,
-          paint: {
-            'raster-brightness-max': 0.35,
-            'raster-brightness-min': 0.05,
-            'raster-contrast': 0.25,
-            'raster-saturation': -1.0
-          }
-        }
-      ]
+      layers: [{
+        id: 'osm-tiles-layer', type: 'raster', source: 'osm-tiles', minzoom: 0, maxzoom: 19,
+        paint: { 'raster-brightness-max': 0.35, 'raster-brightness-min': 0.05, 'raster-contrast': 0.25, 'raster-saturation': -1.0 }
+      }]
     },
-    center: [126.9780, 37.5665],
-    zoom: 11
+    center: [126.9780, 37.5665], zoom: 11
   });
 
   map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
@@ -469,12 +573,7 @@
       const isMobile = window.innerWidth <= 640;
       const pad = isMobile ? 30 : 60;
       const rightPad = (isSplitMode || isMobile) ? pad : 410;
-
-      map.fitBounds(lineBbox, {
-        padding: { top: pad, bottom: pad, left: pad, right: rightPad },
-        maxZoom: 16.5,
-        duration: 600
-      });
+      map.fitBounds(lineBbox, { padding: { top: pad, bottom: pad, left: pad, right: rightPad }, maxZoom: 16.5, duration: 600 });
     } catch(err) {}
   }
 
@@ -482,32 +581,19 @@
     isSplitMode = !isSplitMode;
     document.body.classList.toggle('split-mode', isSplitMode);
     document.getElementById('split-btn').innerText = isSplitMode ? '❐' : '◫';
-
     map.resize();
-    setTimeout(() => {
-      map.resize();
-      map.triggerRepaint();
-      zoomToActiveLine();
-    }, 250);
+    setTimeout(() => { map.resize(); map.triggerRepaint(); zoomToActiveLine(); }, 250);
   }
 
   function updateActiveRouteHighlight(featureId) {
     if (map.getLayer('routes-active-line')) {
-      if (featureId !== null && featureId !== undefined) {
-        map.setFilter('routes-active-line', ['==', ['id'], featureId]);
-      } else {
-        map.setFilter('routes-active-line', ['==', ['id'], -9999]);
-      }
+      map.setFilter('routes-active-line', ['==', ['id'], featureId !== null ? featureId : -9999]);
     }
   }
 
   function updateHoverHighlight(featureId) {
     if (map.getLayer('routes-hover-line')) {
-      if (featureId !== null && featureId !== undefined && featureId !== activeLineId) {
-        map.setFilter('routes-hover-line', ['==', ['id'], featureId]);
-      } else {
-        map.setFilter('routes-hover-line', ['==', ['id'], -9999]);
-      }
+      map.setFilter('routes-hover-line', ['==', ['id'], (featureId !== null && featureId !== activeLineId) ? featureId : -9999]);
     }
   }
 
@@ -526,31 +612,10 @@
       rawGeojsonData = routesData;
 
       map.addSource('boundary-country-source', { type: 'geojson', data: worldGeo });
-      map.addLayer({
-        id: 'boundary-country-line',
-        type: 'line',
-        source: 'boundary-country-source',
-        layout: { 'visibility': 'visible' },
-        paint: {
-          'line-color': '#ffffff',
-          'line-width': 1.2,
-          'line-opacity': 0.35,
-          'line-dasharray': [3, 2]
-        }
-      });
+      map.addLayer({ id: 'boundary-country-line', type: 'line', source: 'boundary-country-source', layout: { 'visibility': 'visible' }, paint: { 'line-color': '#ffffff', 'line-width': 1.2, 'line-opacity': 0.35, 'line-dasharray': [3, 2] } });
 
       map.addSource('boundary-sido-source', { type: 'geojson', data: sidoGeo });
-      map.addLayer({
-        id: 'boundary-sido-line',
-        type: 'line',
-        source: 'boundary-sido-source',
-        layout: { 'visibility': 'none' },
-        paint: {
-          'line-color': '#a4b0be',
-          'line-width': 1.8,
-          'line-opacity': 0.65
-        }
-      });
+      map.addLayer({ id: 'boundary-sido-line', type: 'line', source: 'boundary-sido-source', layout: { 'visibility': 'none' }, paint: { 'line-color': '#a4b0be', 'line-width': 1.8, 'line-opacity': 0.65 } });
 
       sigunguGeo.features.forEach(f => {
         const prefix = String(f.properties.code || '').substring(0, 2);
@@ -558,29 +623,8 @@
       });
 
       map.addSource('boundary-sigungu-source', { type: 'geojson', data: sigunguGeo });
-      map.addLayer({
-        id: 'boundary-sigungu-line',
-        type: 'line',
-        source: 'boundary-sigungu-source',
-        layout: { 'visibility': 'none' },
-        paint: {
-          'line-color': '#dfe4ea',
-          'line-width': 1.1,
-          'line-opacity': 0.5,
-          'line-dasharray': [2, 2]
-        }
-      });
-
-      map.addLayer({
-        id: 'boundary-sigungu-fill',
-        type: 'fill',
-        source: 'boundary-sigungu-source',
-        layout: { 'visibility': 'none' },
-        paint: {
-          'fill-color': '#00ffff',
-          'fill-opacity': 0.04
-        }
-      });
+      map.addLayer({ id: 'boundary-sigungu-line', type: 'line', source: 'boundary-sigungu-source', layout: { 'visibility': 'none' }, paint: { 'line-color': '#dfe4ea', 'line-width': 1.1, 'line-opacity': 0.5, 'line-dasharray': [2, 2] } });
+      map.addLayer({ id: 'boundary-sigungu-fill', type: 'fill', source: 'boundary-sigungu-source', layout: { 'visibility': 'none' }, paint: { 'fill-color': '#00ffff', 'fill-opacity': 0.04 } });
 
       rawGeojsonData.features.forEach((f, idx) => {
         f.id = idx;
@@ -621,65 +665,16 @@
         `;
       });
 
-      map.addSource('routes', {
-        type: 'geojson',
-        data: rawGeojsonData
-      });
-
-      map.addLayer({
-        id: 'routes-hitbox',
-        type: 'line',
-        source: 'routes',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: {
-          'line-color': 'transparent',
-          'line-width': 18
-        }
-      });
-
-      map.addLayer({
-        id: 'routes-line',
-        type: 'line',
-        source: 'routes',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: {
-          'line-color': '#00ffff',
-          'line-width': 2.6,
-          'line-opacity': 0.65
-        }
-      });
-
-      map.addLayer({
-        id: 'routes-hover-line',
-        type: 'line',
-        source: 'routes',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        filter: ['==', ['id'], -9999],
-        paint: {
-          'line-color': '#ffffff',
-          'line-width': 5.8,
-          'line-opacity': 0.85
-        }
-      });
-
-      map.addLayer({
-        id: 'routes-active-line',
-        type: 'line',
-        source: 'routes',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        filter: ['==', ['id'], -9999],
-        paint: {
-          'line-color': '#ffe600',
-          'line-width': 5.5,
-          'line-opacity': 1.0
-        }
-      });
+      map.addSource('routes', { type: 'geojson', data: rawGeojsonData });
+      map.addLayer({ id: 'routes-hitbox', type: 'line', source: 'routes', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': 'transparent', 'line-width': 18 } });
+      map.addLayer({ id: 'routes-line', type: 'line', source: 'routes', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#00ffff', 'line-width': 2.6, 'line-opacity': 0.65 } });
+      map.addLayer({ id: 'routes-hover-line', type: 'line', source: 'routes', layout: { 'line-join': 'round', 'line-cap': 'round' }, filter: ['==', ['id'], -9999], paint: { 'line-color': '#ffffff', 'line-width': 5.8, 'line-opacity': 0.85 } });
+      map.addLayer({ id: 'routes-active-line', type: 'line', source: 'routes', layout: { 'line-join': 'round', 'line-cap': 'round' }, filter: ['==', ['id'], -9999], paint: { 'line-color': '#ffe600', 'line-width': 5.5, 'line-opacity': 1.0 } });
 
       buildDynamicFilters();
 
       countrySelect.value = "대한민국";
       countrySelect.dispatchEvent(new Event('change'));
-      
       sidoSelect.value = "서울특별시";
       sidoSelect.dispatchEvent(new Event('change'));
     });
@@ -690,15 +685,12 @@
       map.getCanvas().style.cursor = 'pointer';
       const feature = e.features[0];
       hoveredLineId = feature.id !== undefined ? feature.id : feature.properties.id;
-
       updateHoverHighlight(hoveredLineId);
 
       const props = feature.properties || {};
       const title = props.name || props.Name || '도보 코스';
       const locTag = formatLocationTag(props);
-      const tagHtml = locTag ? `<br><span style="color:#aaa; font-size:11px;">${locTag}</span>` : '';
-
-      hoverPopup.setLngLat(e.lngLat).setHTML(`<strong>${title}</strong>${tagHtml}`).addTo(map);
+      hoverPopup.setLngLat(e.lngLat).setHTML(`<strong>${title}</strong>${locTag ? '<br><span style="color:#aaa; font-size:11px;">' + locTag + '</span>' : ''}`).addTo(map);
     });
 
     map.on('mouseleave', 'routes-hitbox', () => {
@@ -709,42 +701,46 @@
     });
 
     map.on('click', 'routes-hitbox', (e) => {
-      activeLine = e.features[0];
-      activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
-      const props = activeLine.properties || {};
-      const title = props.name || props.Name || '도보 코스';
-      const rawDesc = props.description || props.Description || '';
-
-      const videoId = extractYouTubeId(rawDesc);
-      if (!videoId) {
-        alert("이 코스에 연결된 유튜브 링크를 추출할 수 없습니다.\n내용: " + rawDesc);
-        return;
-      }
-
-      updateHoverHighlight(null);
-      updateActiveRouteHighlight(activeLineId);
-
-      document.getElementById('player-panel').style.display = 'flex';
-      document.getElementById('video-title').innerText = title;
-
-      zoomToActiveLine();
-
-      if (currentVideoId !== videoId) {
-        currentVideoId = videoId;
-        if (player && typeof player.loadVideoById === 'function') {
-          player.loadVideoById(videoId);
-        } else {
-          document.getElementById('player-container').innerHTML = 
-            `<iframe id="yt-player" src="https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
-        }
-      } else {
-        if (player && typeof player.seekTo === 'function') {
-          player.seekTo(0, true);
-          player.playVideo();
-        }
-      }
+      playRouteFeature(e.features[0]);
     });
   });
+
+  function playRouteFeature(feature) {
+    activeLine = feature;
+    activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
+    const props = activeLine.properties || {};
+    const title = props.name || props.Name || '도보 코스';
+    const videoId = extractYouTubeId(props.description || props.Description || '');
+
+    if (!videoId) {
+      alert("이 코스에 연결된 유튜브 링크를 추출할 수 없습니다.");
+      return;
+    }
+
+    updateHoverHighlight(null);
+    updateActiveRouteHighlight(activeLineId);
+
+    if (current0Mode === 'map' || currentMode === 'map') {
+      document.getElementById('player-panel').style.display = 'flex';
+      document.getElementById('video-title').innerText = title;
+      zoomToActiveLine();
+    }
+
+    if (currentVideoId !== videoId) {
+      currentVideoId = videoId;
+      if (currentMode === 'map') {
+        if (player && typeof player.loadVideoById === 'function') player.loadVideoById(videoId);
+      } else {
+        if (listPlayer && typeof listPlayer.loadVideoById === 'function') listPlayer.loadVideoById(videoId);
+      }
+    } else {
+      const activeP = currentMode === 'map' ? player : listPlayer;
+      if (activeP && typeof activeP.seekTo === 'function') {
+        activeP.seekTo(0, true);
+        activeP.playVideo();
+      }
+    }
+  }
 
   function closePlayer() {
     document.getElementById('player-panel').style.display = 'none';
@@ -756,24 +752,14 @@
   }
 
   function onYearCheckboxChange(checkbox) {
-    const yr = checkbox.value;
-    if (checkbox.checked) {
-      selectedYears.add(yr);
-    } else {
-      selectedYears.delete(yr);
-    }
+    if (checkbox.checked) selectedYears.add(checkbox.value);
+    else selectedYears.delete(checkbox.value);
     applyFilter();
   }
 
   function buildDynamicFilters() {
     countrySelect.innerHTML = `<option value="ALL">${formatCountryLabel('ALL')}</option>`;
-
-    const countries = Object.keys(adminHierarchy).sort((a, b) => {
-      if (a === '대한민국') return -1;
-      if (b === '대한민국') return 1;
-      return a.localeCompare(b);
-    });
-
+    const countries = Object.keys(adminHierarchy).sort((a, b) => (a === '대한민국' ? -1 : b === '대한민국' ? 1 : a.localeCompare(b)));
     countries.forEach(country => {
       countrySelect.innerHTML += `<option value="${country}">${formatCountryLabel(country)}</option>`;
     });
@@ -786,9 +772,7 @@
       if (c === '대한민국' && adminHierarchy[c]) {
         sidoSelect.disabled = false;
         SIDO_SORT_ORDER.forEach(sido => {
-          if (adminHierarchy[c][sido]) {
-            sidoSelect.innerHTML += `<option value="${sido}">${formatSidoLabel(sido)}</option>`;
-          }
+          if (adminHierarchy[c][sido]) sidoSelect.innerHTML += `<option value="${sido}">${formatSidoLabel(sido)}</option>`;
         });
         sigunguSelect.disabled = true;
       } else {
@@ -817,37 +801,41 @@
     sigunguSelect.addEventListener('change', applyFilter);
   }
 
-  function applyFilter() {
+  function getFilteredFeatures() {
+    if (!rawGeojsonData) return [];
     const c = countrySelect.value;
     const sd = sidoSelect.value;
     const sgg = sigunguSelect.value;
 
-    const filteredFeatures = rawGeojsonData.features.filter(f => {
+    return rawGeojsonData.features.filter(f => {
       const p = f.properties || {};
-      
       if (c !== 'ALL' && p.country !== c) return false;
-      
       if (c === '대한민국' && sd !== 'ALL') {
         const sidos = (p.sido || "").split(',').map(s => s.trim());
         if (!sidos.includes(sd)) return false;
       }
-      
       if (c === '대한민국' && sd !== 'ALL' && sgg !== 'ALL') {
         const sigs = (p.sigungu || "").split(',').map(s => s.trim());
         if (!sigs.includes(sgg)) return false;
       }
-
       const yr = extractYear(f);
       if (yr && !selectedYears.has(yr)) return false;
-
       return true;
     });
+  }
 
+  function applyFilter() {
+    const filteredFeatures = getFilteredFeatures();
     const matchedIds = filteredFeatures.map(f => f.id);
-    const filterExpression = (c === 'ALL' && selectedYears.size === availableYears.size) ? null : ['in', ['id'], ['literal', matchedIds]];
+    const filterExpression = (countrySelect.value === 'ALL' && selectedYears.size === availableYears.size) ? null : ['in', ['id'], ['literal', matchedIds]];
     
     map.setFilter('routes-line', filterExpression);
     map.setFilter('routes-hitbox', filterExpression);
+
+    // 경계선 표시 처리 생략 없이 적용
+    const c = countrySelect.value;
+    const sd = sidoSelect.value;
+    const sgg = sigunguSelect.value;
 
     if (map.getLayer('boundary-country-line')) {
       if (c === 'ALL') {
@@ -857,7 +845,6 @@
         map.setLayoutProperty('boundary-sigungu-fill', 'visibility', 'none');
       } else if (c === '대한민국') {
         map.setLayoutProperty('boundary-country-line', 'visibility', 'none');
-
         if (sd === 'ALL') {
           map.setLayoutProperty('boundary-sido-line', 'visibility', 'visible');
           map.setLayoutProperty('boundary-sigungu-line', 'visibility', 'none');
@@ -866,14 +853,8 @@
           map.setLayoutProperty('boundary-sido-line', 'visibility', 'none');
           map.setLayoutProperty('boundary-sigungu-line', 'visibility', 'visible');
           map.setLayoutProperty('boundary-sigungu-fill', 'visibility', 'visible');
-
-          if (sgg === 'ALL') {
-            map.setFilter('boundary-sigungu-line', ['==', ['get', '_sido'], sd]);
-            map.setFilter('boundary-sigungu-fill', ['==', ['get', '_sido'], sd]);
-          } else {
-            map.setFilter('boundary-sigungu-line', ['==', ['get', 'name'], sgg]);
-            map.setFilter('boundary-sigungu-fill', ['==', ['get', 'name'], sgg]);
-          }
+          map.setFilter('boundary-sigungu-line', sgg === 'ALL' ? ['==', ['get', '_sido'], sd] : ['==', ['get', 'name'], sgg]);
+          map.setFilter('boundary-sigungu-fill', sgg === 'ALL' ? ['==', ['get', '_sido'], sd] : ['==', ['get', 'name'], sgg]);
         }
       } else {
         map.setLayoutProperty('boundary-country-line', 'visibility', 'visible');
@@ -883,14 +864,46 @@
       }
     }
 
-    if (filteredFeatures.length > 0) {
+    if (currentMode === 'map' && filteredFeatures.length > 0) {
       try {
         const fc = turf.featureCollection(filteredFeatures);
         const bbox = turf.bbox(fc);
-        const isMobile = window.innerWidth <= 640;
-        map.fitBounds(bbox, { padding: isMobile ? 40 : 80, maxZoom: 15, duration: 800 });
+        map.fitBounds(bbox, { padding: window.innerWidth <= 640 ? 40 : 80, maxZoom: 15, duration: 800 });
       } catch(e) {}
     }
+
+    if (currentMode === 'list') {
+      renderRouteList();
+    }
+  }
+
+  function renderRouteList() {
+    const listScrollArea = document.getElementById('list-scroll-area');
+    const features = getFilteredFeatures();
+
+    if (features.length === 0) {
+      listScrollArea.innerHTML = `<div style="text-align:center; color:#888; padding:30px;">조건에 일치하는 워킹 코스가 없습니다.</div>`;
+      return;
+    }
+
+    let html = '';
+    features.forEach((f, index) => {
+      const props = f.properties || {};
+      const title = props.name || props.Name || '도보 코스';
+      const locTag = formatLocationTag(props);
+
+      html += `
+        <div class="route-item" onclick='playRouteFeature(rawGeojsonData.features[${f.id}])'>
+          <div class="route-number">${index + 1}</div>
+          <div class="route-details">
+            <div class="route-item-title">${title}</div>
+            <div class="route-item-meta">${locTag}</div>
+          </div>
+        </div>
+      `;
+    });
+
+    listScrollArea.innerHTML = html;
   }
 </script>
 </body>
