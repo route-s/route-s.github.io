@@ -330,6 +330,31 @@
     return match ? match[1] : null;
   }
 
+  // [신규] 시도와 시군구를 1:1로 매칭하여 "[시도] [시군구]" 형태로 포맷팅하는 함수
+  function formatLocationTag(props) {
+    const country = props.country || "대한민국";
+    if (country !== "대한민국") return `[${country}]`;
+
+    const sidos = (props.sido || "").split(',').map(s => s.trim()).filter(Boolean);
+    const sigs = (props.sigungu || "").split(',').map(s => s.trim()).filter(Boolean);
+
+    if (sidos.length === 0) return "";
+
+    // 만약 시도 개수와 시군구 개수가 다를 경우의 안전장치
+    let pairs = [];
+    for (let i = 0; i < Math.max(sidos.length, sigs.length); i++) {
+      const sd = sidos[i] || sidos[0] || "";
+      const sg = sigs[i] || "";
+      if (sd && sg) {
+        pairs.push(`${sd} ${sg}`);
+      } else if (sd) {
+        pairs.push(sd);
+      }
+    }
+
+    return `[${pairs.join(', ')}]`;
+  }
+
   function toggleYearDropdown() {
     document.getElementById('year-checkboxes').classList.toggle('show');
   }
@@ -628,7 +653,7 @@
 
     const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
 
-    // 팝업에서 안내 문구 제거하고 코스 타이틀과 지역 태그만 깔끔하게 표시
+    // [개선] 시도와 시군구가 쌍을 이뤄 "[경기도 고양시덕양구, 서울특별시 마포구]" 형태로 팝업 표시
     map.on('mouseenter', 'routes-hitbox', (e) => {
       map.getCanvas().style.cursor = 'pointer';
       const feature = e.features[0];
@@ -638,13 +663,10 @@
 
       const props = feature.properties || {};
       const title = props.name || props.Name || '도보 코스';
-      let locTag = '';
-      if (props.country === '대한민국' && props.sido) {
-        locTag = `<br><span style="color:#aaa; font-size:11px;">[${props.sido} ${props.sigungu || ''}]</span>`;
-      } else if (props.country) {
-        locTag = `<br><span style="color:#aaa; font-size:11px;">[${props.country}]</span>`;
-      }
-      hoverPopup.setLngLat(e.lngLat).setHTML(`<strong>${title}</strong>${locTag}`).addTo(map);
+      const locTag = formatLocationTag(props);
+      const tagHtml = locTag ? `<br><span style="color:#aaa; font-size:11px;">${locTag}</span>` : '';
+
+      hoverPopup.setLngLat(e.lngLat).setHTML(`<strong>${title}</strong>${tagHtml}`).addTo(map);
     });
 
     map.on('mouseleave', 'routes-hitbox', () => {
