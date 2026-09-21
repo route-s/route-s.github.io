@@ -330,7 +330,7 @@
     return match ? match[1] : null;
   }
 
-  // [신규] 시도와 시군구를 1:1로 매칭하여 "[시도] [시군구]" 형태로 포맷팅하는 함수
+  // [강화된 매칭] 시군구 이름이 서울 자치구인지 판별하여 올바른 시도와 1:1 스마트 매칭
   function formatLocationTag(props) {
     const country = props.country || "대한민국";
     if (country !== "대한민국") return `[${country}]`;
@@ -338,19 +338,21 @@
     const sidos = (props.sido || "").split(',').map(s => s.trim()).filter(Boolean);
     const sigs = (props.sigungu || "").split(',').map(s => s.trim()).filter(Boolean);
 
-    if (sidos.length === 0) return "";
-
-    // 만약 시도 개수와 시군구 개수가 다를 경우의 안전장치
-    let pairs = [];
-    for (let i = 0; i < Math.max(sidos.length, sigs.length); i++) {
-      const sd = sidos[i] || sidos[0] || "";
-      const sg = sigs[i] || "";
-      if (sd && sg) {
-        pairs.push(`${sd} ${sg}`);
-      } else if (sd) {
-        pairs.push(sd);
-      }
+    if (sigs.length === 0) {
+      return sidos.length > 0 ? `[${sidos.join(', ')}]` : "";
     }
+
+    let pairs = [];
+    sigs.forEach(sig => {
+      // 서울 자치구인 경우 무조건 서울특별시로 고정 매칭
+      if (SEOUL_DISTRICTS.has(sig)) {
+        pairs.push(`서울특별시 ${sig}`);
+      } else {
+        // 그 외의 경우 경기도 등 올바른 시도 매칭 (sido 배열에 있으면 사용, 없으면 기본값)
+        let matchedSido = sidos.find(sd => sd !== "서울특별시") || sidos[0] || "경기도";
+        pairs.push(`${matchedSido} ${sig}`);
+      }
+    });
 
     return `[${pairs.join(', ')}]`;
   }
@@ -653,7 +655,6 @@
 
     const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
 
-    // [개선] 시도와 시군구가 쌍을 이뤄 "[경기도 고양시덕양구, 서울특별시 마포구]" 형태로 팝업 표시
     map.on('mouseenter', 'routes-hitbox', (e) => {
       map.getCanvas().style.cursor = 'pointer';
       const feature = e.features[0];
