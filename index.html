@@ -47,34 +47,34 @@
       background-color: #1a1a1a;
     }
 
-    /* 상태바 중앙 정렬 및 일관된 레이아웃 */
+    /* 상태바 중앙 정렬 및 절대 2줄로 내려가지 않도록 nowrap 고정 */
     .filter-container {
       position: absolute;
       top: 15px;
       left: 50%;
       transform: translateX(-50%);
       z-index: 100;
-      background: rgba(18, 20, 26, 0.92);
-      padding: 8px 12px;
+      background: rgba(18, 20, 26, 0.95);
+      padding: 6px 10px;
       border-radius: 10px;
       box-shadow: 0 4px 20px rgba(0,0,0,0.6);
       border: 1px solid rgba(255,255,255,0.15);
       display: flex;
-      gap: 6px;
+      gap: 5px;
       align-items: center;
       backdrop-filter: blur(8px);
-      max-width: calc(100vw - 30px);
-      flex-wrap: wrap;
-      justify-content: center;
+      flex-wrap: nowrap;
+      white-space: nowrap;
     }
 
     #logo-icon {
-      height: 24px;
+      height: 22px;
       width: auto;
       object-fit: contain;
       cursor: pointer;
       border-radius: 4px;
-      margin-right: 2px;
+      margin-right: 1px;
+      flex-shrink: 0;
     }
 
     .filter-select {
@@ -82,13 +82,13 @@
       color: #fff;
       border: 1px solid rgba(255,255,255,0.2);
       border-radius: 6px;
-      padding: 6px 8px;
-      font-size: 12.5px;
+      padding: 5px 6px;
+      font-size: 11.5px;
       outline: none;
       cursor: pointer;
       text-overflow: ellipsis;
-      white-space: nowrap;
       overflow: hidden;
+      flex-shrink: 1;
     }
     .filter-select:disabled {
       opacity: 0.35;
@@ -100,11 +100,11 @@
       color: #fff;
       border: 1px solid rgba(255,255,255,0.2);
       border-radius: 6px;
-      padding: 6px 10px;
-      font-size: 12.5px;
+      padding: 5px 8px;
+      font-size: 11.5px;
       outline: none;
-      flex: 1;
-      min-width: 140px;
+      width: 130px;
+      flex-shrink: 1;
     }
     .search-input::placeholder { color: #888; }
     .search-input:focus { border-color: #00ffff; }
@@ -113,17 +113,18 @@
       background: #252836;
       border: 1px solid rgba(255,255,255,0.2);
       border-radius: 6px;
-      padding: 3px;
+      padding: 2px;
       display: flex;
       gap: 2px;
       cursor: pointer;
+      flex-shrink: 0;
     }
     .mode-btn {
       background: transparent;
       border: none;
       color: #aaa;
-      padding: 4px 8px;
-      font-size: 11.5px;
+      padding: 4px 6px;
+      font-size: 11px;
       font-weight: bold;
       border-radius: 4px;
       cursor: pointer;
@@ -139,31 +140,33 @@
       color: #fff;
       border: 1px solid rgba(255,255,255,0.2);
       border-radius: 6px;
-      padding: 6px 10px;
-      font-size: 12px;
+      padding: 5px 8px;
+      font-size: 11.5px;
       cursor: pointer;
       display: flex;
       align-items: center;
       gap: 4px;
       white-space: nowrap;
+      flex-shrink: 0;
     }
     .action-btn:hover { background: #2f3346; }
 
     .dropdown-multiselect {
       position: relative;
       display: inline-block;
+      flex-shrink: 0;
     }
     .dropdown-btn {
       background: #252836;
       color: #fff;
       border: 1px solid rgba(255,255,255,0.2);
       border-radius: 6px;
-      padding: 6px 10px;
-      font-size: 12.5px;
+      padding: 5px 8px;
+      font-size: 11.5px;
       cursor: pointer;
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 4px;
     }
     .dropdown-btn:hover { background: #2f3346; }
     .dropdown-content {
@@ -176,28 +179,30 @@
       border: 1px solid rgba(255,255,255,0.2);
       border-radius: 8px;
       box-shadow: 0 6px 20px rgba(0,0,0,0.7);
-      padding: 10px 12px;
+      padding: 8px 10px;
       z-index: 102;
-      min-width: 140px;
-      max-height: 220px;
+      min-width: 120px;
+      max-height: 200px;
       overflow-y: auto;
+      white-space: nowrap;
     }
     .dropdown-content.show { display: block; }
     .year-checkbox-label {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       color: #ddd;
-      font-size: 12px;
-      padding: 4px 0;
+      font-size: 11.5px;
+      padding: 3px 0;
       cursor: pointer;
     }
     .year-checkbox-label:hover { color: #00ffff; }
     .year-checkbox-label input { accent-color: #00ffff; cursor: pointer; }
 
+    /* 지도 모드 우측 상단 플레이어 패널 */
     #player-panel {
       position: absolute;
-      top: 70px;
+      top: 65px;
       right: 15px;
       width: 380px;
       max-width: calc(100vw - 30px);
@@ -214,8 +219,8 @@
     }
     #player-container { width: 100%; height: 215px; background: #000; position: relative; }
     #player-container iframe { width: 100%; height: 100%; border: none; }
-    #info-box { padding: 10px 14px; background: rgba(22, 25, 34, 0.98); display: flex; justify-content: space-between; align-items: center; }
-    #video-title { font-size: 14px; font-weight: bold; color: #00ffff; line-height: 1.3; flex: 1; }
+    #info-box { padding: 10px 14px; background: rgba(22, 25, 34, 0.98); }
+    #video-title { font-size: 14px; font-weight: bold; color: #00ffff; line-height: 1.3; width: 100%; }
 
     /* 리스트 모드 레이아웃 */
     #list-view-container {
@@ -224,7 +229,7 @@
       background: #14161c;
       display: flex;
       flex-direction: column;
-      padding-top: 75px;
+      padding-top: 65px;
     }
     #list-player-area {
       width: 100%;
@@ -240,7 +245,7 @@
     #list-controls-bar {
       max-width: 900px;
       width: calc(100% - 30px);
-      margin: 15px auto 5px auto;
+      margin: 12px auto 5px auto;
       display: flex;
       gap: 10px;
       align-items: center;
@@ -306,30 +311,28 @@
     #close-btn { right: 8px; font-size: 16px; }
     #split-btn { right: 42px; font-size: 13px; }
 
-    @media (max-width: 640px) {
+    @media (max-width: 768px) {
       .filter-container {
-        top: 10px;
-        width: calc(100% - 20px);
-        padding: 6px 8px;
-        gap: 4px;
+        top: 8px;
+        padding: 4px 6px;
+        gap: 3px;
       }
-      #logo-icon { height: 20px; }
-      .filter-select, .dropdown-btn, .action-btn {
-        flex: 1;
-        min-width: 0;
-        padding: 5px 4px;
-        font-size: 11px;
+      #logo-icon { height: 18px; }
+      .filter-select, .dropdown-btn, .action-btn, .search-input {
+        padding: 4px 5px;
+        font-size: 10.5px;
       }
+      .search-input { width: 95px; }
       #player-panel {
-        top: 60px;
+        top: 55px;
         left: 10px;
         right: 10px;
         width: calc(100% - 20px);
         max-width: 100%;
       }
-      #list-view-container { padding-top: 65px; }
-      #list-player-area { height: 35vh; }
-      #list-controls-bar { width: calc(100% - 20px); margin: 10px auto 5px auto; }
+      #list-view-container { padding-top: 55px; }
+      #list-player-area { height: 32vh; }
+      #list-controls-bar { width: calc(100% - 20px); margin: 8px auto 4px auto; }
     }
 
     body.split-mode #app-container { display: flex; flex-direction: column; }
@@ -363,7 +366,6 @@
       <div id="player-container"><div id="yt-player"></div></div>
       <div id="info-box">
         <div id="video-title">코스 명칭</div>
-        <button id="map-autoplay-btn" class="action-btn" style="padding:2px 6px; font-size:10.5px;" onclick="toggleAutoPlay()">▶ 연속: 켜짐</button>
       </div>
     </div>
     <div id="map-wrapper">
@@ -376,9 +378,8 @@
     <div id="list-view-container">
       <div id="list-player-area">
         <div id="list-yt-container" style="width:100%; flex:1; background:#000;"></div>
-        <div style="background:#1e222d; padding:8px 15px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid rgba(255,255,255,0.1);">
+        <div style="background:#1e222d; padding:8px 15px; border-top:1px solid rgba(255,255,255,0.1);">
           <div id="list-video-title" style="color:#00ffff; font-size:13.5px; font-weight:bold; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">재생 중인 코스가 없습니다.</div>
-          <button id="list-autoplay-btn" class="action-btn" onclick="toggleAutoPlay()">▶ 연속재생: 켜짐</button>
         </div>
       </div>
 
@@ -391,7 +392,7 @@
     </div>
   </div>
 
-  <!-- MAP 전용 상단 상태바 (가운데 정렬) -->
+  <!-- MAP 전용 상단 상태바 (1줄 nowrap 고정) -->
   <div id="map-filter-container" class="filter-container">
     <img id="logo-icon" src="./logo.png" alt="ROUTE S" title="ROUTE S 채널 바로가기" onclick="window.open('https://www.youtube.com/@루트에스', '_blank')">
 
@@ -411,12 +412,12 @@
     </select>
 
     <div class="dropdown-multiselect" id="map-year-dropdown-container">
-      <button class="dropdown-btn" type="button" onclick="toggleMapYearDropdown()">📅 연도별 (Years) ▼</button>
+      <button class="dropdown-btn" type="button" onclick="toggleMapYearDropdown()">📅 연도별 ▼</button>
       <div class="dropdown-content" id="map-year-checkboxes"></div>
     </div>
   </div>
 
-  <!-- LIST 전용 상단 상태바 (가운데 정렬) -->
+  <!-- LIST 전용 상단 상태바 (1줄 nowrap 고정) -->
   <div id="list-filter-container" class="filter-container" style="display:none;">
     <img id="logo-icon" src="./logo.png" alt="ROUTE S" title="ROUTE S 채널 바로가기" onclick="window.open('https://www.youtube.com/@루트에스', '_blank')">
 
@@ -436,7 +437,7 @@
     </select>
 
     <div class="dropdown-multiselect" id="list-year-dropdown-container">
-      <button class="dropdown-btn" type="button" onclick="toggleListYearDropdown()">📅 연도별 (Years) ▼</button>
+      <button class="dropdown-btn" type="button" onclick="toggleListYearDropdown()">📅 연도별 ▼</button>
       <div class="dropdown-content" id="list-year-checkboxes"></div>
     </div>
   </div>
@@ -459,8 +460,6 @@
   let currentVideoId = null;
   let currentMode = 'map';
   let sortAscending = true;
-  let isAutoPlayOn = true;
-  let currentIndexInFiltered = -1;
 
   const SEOUL_DISTRICTS = new Set([
     "종로구", "중구", "용산구", "성동구", "광진구", "동대문구", "중랑구", "성북구",
@@ -619,12 +618,6 @@
       resetMapToInitial();
     } else {
       resetListToInitial();
-      // 리스트 뷰 전환 시 플레이어 크기 갱신 보장
-      setTimeout(() => {
-        if (listPlayer && typeof listPlayer.getIframe === 'function') {
-          // 필요시 리사이즈 트리거
-        }
-      }, 100);
     }
   }
 
@@ -662,40 +655,15 @@
     renderRouteList();
   }
 
-  function toggleAutoPlay() {
-    isAutoPlayOn = !isAutoPlayOn;
-    const txt = isAutoPlayOn ? "▶ 연속재생: 켜짐" : "⏸ 연속재생: 꺼짐";
-    document.getElementById('map-autoplay-btn').innerText = txt;
-    document.getElementById('list-autoplay-btn').innerText = txt;
-  }
-
   function onYouTubeIframeAPIReady() {
     player = new YT.Player('yt-player', {
       height: '100%', width: '100%',
-      playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'enablejsapi': 1, 'origin': window.location.origin },
-      events: { 'onStateChange': onPlayerStateChange }
+      playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'enablejsapi': 1, 'origin': window.location.origin }
     });
     listPlayer = new YT.Player('list-yt-container', {
       height: '100%', width: '100%',
-      playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'enablejsapi': 1, 'origin': window.location.origin },
-      events: { 'onStateChange': onPlayerStateChange }
+      playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'enablejsapi': 1, 'origin': window.location.origin }
     });
-  }
-
-  function onPlayerStateChange(event) {
-    if (event.data === YT.PlayerState.ENDED && isAutoPlayOn) {
-      playNextRoute();
-    }
-  }
-
-  function playNextRoute() {
-    if (currentMode === 'list') {
-      const currentFiltered = getFilteredListFeatures();
-      if (currentFiltered.length === 0) return;
-      currentIndexInFiltered++;
-      if (currentIndexInFiltered >= currentFiltered.length) currentIndexInFiltered = 0;
-      playRouteFeature(currentFiltered[currentIndexInFiltered]);
-    }
   }
 
   const map = new maplibregl.Map({
@@ -892,24 +860,13 @@
     if (currentMode === 'map') {
       document.getElementById('player-panel').style.display = 'flex';
       zoomToActiveLine();
-    }
-
-    // 플레이어 객체가 준비되었는지 확인 후 로드 실행
-    if (currentMode === 'map') {
       if (player && typeof player.loadVideoById === 'function') {
         player.loadVideoById(videoId);
-      } else {
-        currentVideoId = videoId;
       }
     } else {
       if (listPlayer && typeof listPlayer.loadVideoById === 'function') {
         listPlayer.loadVideoById(videoId);
-      } else {
-        currentVideoId = videoId;
       }
-    }
-
-    if (currentMode === 'list') {
       renderRouteList();
     }
   }
@@ -1071,14 +1028,14 @@
     }
 
     let html = '';
-    features.forEach((f, index) => {
+    features.forEach((f) => {
       const props = f.properties || {};
       const title = props.name || props.Name || '도보 코스';
       const locTag = formatLocationTag(props);
       const isPlaying = (activeLineId === f.id);
 
       html += `
-        <div class="route-item ${isPlaying ? 'active-playing' : ''}" onclick='currentIndexInFiltered = ${index}; playRouteFeature(rawGeojsonData.features[${f._tempIndex}])'>
+        <div class="route-item ${isPlaying ? 'active-playing' : ''}" onclick='playRouteFeature(rawGeojsonData.features[${f._tempIndex}])'>
           <div class="route-number">${f._globalId}</div>
           <div class="route-details">
             <div class="route-item-title">${title}</div>
