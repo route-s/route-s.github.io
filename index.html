@@ -56,6 +56,16 @@
       flex-wrap: wrap;
     }
 
+    /* 루트에스 로고 스타일 (상태바 세로폭에 맞춘 미니멀 규격) */
+    #logo-icon {
+      height: 24px;
+      width: auto;
+      object-fit: contain;
+      cursor: pointer;
+      border-radius: 4px;
+      margin-right: 2px;
+    }
+
     .filter-select {
       background: #252836;
       color: #fff;
@@ -162,6 +172,9 @@
         padding: 6px 8px;
         gap: 4px;
       }
+      #logo-icon {
+        height: 20px;
+      }
       .filter-select, .dropdown-btn {
         flex: 1;
         min-width: 0;
@@ -228,6 +241,9 @@
 
   <div id="map-wrapper">
     <div id="filter-container">
+      <!-- 상태바 가장 좌측에 배치된 ROUTE S 로고 (클릭 시 유튜브 채널로 이동) -->
+      <img id="logo-icon" src="./logo.png" alt="ROUTE S" title="ROUTE S 채널 바로가기" onclick="window.open('https://www.youtube.com/@루트에스', '_blank')">
+
       <select id="country-select" class="filter-select">
         <option value="ALL">1: 국가 전체 (All)</option>
       </select>
@@ -267,14 +283,12 @@
     "구로구", "금천구", "영등포구", "동작구", "관악구", "서초구", "강남구", "송파구", "강동구"
   ]);
 
-  // 국가 영문 명칭 매핑 (대한민국 -> South Korea)
   const COUNTRY_EN_MAP = {
     "대한민국": "South Korea", "일본": "Japan", "싱가포르": "Singapore",
     "남아프리카공화국": "RSA", "대만": "Taiwan", "미국": "USA",
     "베트남": "Vietnam", "캐나다": "Canada", "홍콩": "Hong Kong"
   };
 
-  // 시도 간소화 명칭 매핑
   const SIDO_SHORT_MAP = {
     "서울특별시": "서울", "부산광역시": "부산", "대구광역시": "대구", "인천광역시": "인천",
     "광주광역시": "광주", "대전광역시": "대전", "울산광역시": "울산", "세종특별자치시": "세종",
@@ -291,7 +305,6 @@
     "제주특별자치도": "Jeju"
   };
 
-  // 요청하신 시도 코드별 정렬 순서 정의 (서울, 부산 순...)
   const SIDO_SORT_ORDER = [
     "서울특별시", "부산광역시", "대구광역시", "인천광역시",
     "광주광역시", "대전광역시", "울산광역시", "세종특별자치시",
@@ -755,7 +768,6 @@
   function buildDynamicFilters() {
     countrySelect.innerHTML = `<option value="ALL">${formatCountryLabel('ALL')}</option>`;
 
-    // 국가 목록 정렬 (대한민국 우선)
     const countries = Object.keys(adminHierarchy).sort((a, b) => {
       if (a === '대한민국') return -1;
       if (b === '대한민국') return 1;
@@ -773,7 +785,6 @@
 
       if (c === '대한민국' && adminHierarchy[c]) {
         sidoSelect.disabled = false;
-        // 요청하신 시도 코드 순서(SIDO_SORT_ORDER)에 맞춰 필터 목록 생성
         SIDO_SORT_ORDER.forEach(sido => {
           if (adminHierarchy[c][sido]) {
             sidoSelect.innerHTML += `<option value="${sido}">${formatSidoLabel(sido)}</option>`;
