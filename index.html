@@ -199,7 +199,7 @@
     .year-checkbox-label:hover { color: #00ffff; }
     .year-checkbox-label input { accent-color: #00ffff; cursor: pointer; }
 
-    /* 통합 YouTube 플레이어 패널 */
+    /* 지도 모드 우측 상단 플레이어 패널 */
     #player-panel {
       position: absolute;
       top: 65px;
@@ -229,7 +229,7 @@
     #info-box { padding: 10px 14px; background: rgba(22, 25, 34, 0.98); }
     #video-title { font-size: 14px; font-weight: bold; color: #00ffff; line-height: 1.3; width: 100%; }
 
-    /* LIST 모드에서는 동일한 플레이어 패널을 화면 상단에 배치 */
+    /* 리스트 모드일 때 플레이어 패널을 화면 상단에 고정 배치 */
     body.list-mode #player-panel {
       position: relative;
       top: 65px;
@@ -396,7 +396,7 @@
 <body class="map-mode">
 
 <div id="app-container">
-  <!-- 통합 YouTube 플레이어 패널 (MAP/LIST 공용) -->
+  <!-- 단일 공용 유튜브 플레이어 패널 -->
   <div id="player-panel">
     <button id="split-btn" class="panel-btn" onclick="toggleSplitMode()" title="화면 상하 분할 / 팝업 토글">◫</button>
     <button id="close-btn" class="panel-btn" onclick="closePlayer()" title="닫기">×</button>
@@ -764,10 +764,15 @@
 
   map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
 
-  // [수정] URL 객체 파싱 실패 시에도 정규식으로 안전하게 추출하도록 보완
+  // [수정] 모든 형태의 유튜브 링크(URL 및 11자리 ID 직접 기입 등)를 완벽하고 안전하게 추출
   function extractYouTubeId(url) {
     if (!url) return null;
     const value = String(url).trim();
+
+    // 만약 11자리 ID 그 자체라면 바로 반환
+    if (/^[\w-]{11}$/.test(value)) {
+      return value;
+    }
 
     try {
       const parsed = new URL(value);
@@ -778,7 +783,7 @@
         return id && /^[\w-]{11}$/.test(id) ? id : null;
       }
 
-      if (host.includes('youtube.com') || host.includes('youtube-nocookie.com')) {
+      if (host.includes('youtube.com') || host.includes('youtube-nocookie.com') || host.includes('bit.ly') || host.includes('t.co')) {
         const v = parsed.searchParams.get('v');
         if (v && /^[\w-]{11}$/.test(v)) return v;
 
@@ -923,7 +928,9 @@
     map.on('click', 'routes-hitbox', (e) => {
       const clickedFeat = e.features[0];
       const props = clickedFeat.properties || {};
-      const videoId = extractYouTubeId(props.description || props.Description || '');
+      const videoId = extractYouTubeId(props.description || props.Description || '') ||
+                      extractYouTubeId(props.url || props.link || '') ||
+                      extractYouTubeId(props.name || props.Name || '');
       
       if (!videoId) {
         alert("이 코스는 유튜브 영상 연결 준비 중입니다.");
@@ -938,7 +945,6 @@
     activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
     const props = activeLine.properties || {};
     
-    // [수정] description 뿐만 아니라 name/title 등 속성 전체에서 유튜브 ID를 안전하게 탐색
     const videoId = extractYouTubeId(props.description || props.Description || '') ||
                     extractYouTubeId(props.url || props.link || '') ||
                     extractYouTubeId(props.name || props.Name || '');
