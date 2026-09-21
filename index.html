@@ -47,7 +47,7 @@
       background-color: #1a1a1a;
     }
 
-    /* 상태바 중앙 정렬 및 절대 2줄로 내려가지 않도록 nowrap 고정 */
+    /* 상태바 중앙 정렬 및 1줄 고정 */
     .filter-container {
       position: absolute;
       top: 15px;
@@ -199,7 +199,6 @@
     .year-checkbox-label:hover { color: #00ffff; }
     .year-checkbox-label input { accent-color: #00ffff; cursor: pointer; }
 
-    /* 지도 모드 우측 상단 플레이어 패널 */
     #player-panel {
       position: absolute;
       top: 65px;
@@ -392,7 +391,7 @@
     </div>
   </div>
 
-  <!-- MAP 전용 상단 상태바 (1줄 nowrap 고정) -->
+  <!-- MAP 전용 상단 상태바 -->
   <div id="map-filter-container" class="filter-container">
     <img id="logo-icon" src="./logo.png" alt="ROUTE S" title="ROUTE S 채널 바로가기" onclick="window.open('https://www.youtube.com/@루트에스', '_blank')">
 
@@ -417,7 +416,7 @@
     </div>
   </div>
 
-  <!-- LIST 전용 상단 상태바 (1줄 nowrap 고정) -->
+  <!-- LIST 전용 상단 상태바 -->
   <div id="list-filter-container" class="filter-container" style="display:none;">
     <img id="logo-icon" src="./logo.png" alt="ROUTE S" title="ROUTE S 채널 바로가기" onclick="window.open('https://www.youtube.com/@루트에스', '_blank')">
 
@@ -457,7 +456,6 @@
   let mapSelectedYears = new Set();
   let listSelectedYears = new Set();
   let isSplitMode = false;
-  let currentVideoId = null;
   let currentMode = 'map';
   let sortAscending = true;
 
@@ -602,6 +600,7 @@
     }
   });
 
+  // 모드 전환 시 이전 모드의 영상 및 재생 상태를 깔끔하게 초기화
   function switchMode(mode) {
     currentMode = mode;
     document.querySelectorAll('.mode-btn').forEach(b => {
@@ -613,10 +612,16 @@
     document.getElementById('map-filter-container').style.display = (mode === 'map') ? 'flex' : 'none';
     document.getElementById('list-filter-container').style.display = (mode === 'list') ? 'flex' : 'none';
 
+    // 모드 전환 시 상대방 플레이어 초기화 (재생 중단 및 대기 상태로 전환)
     if (mode === 'map') {
+      if (listPlayer && typeof listPlayer.stopVideo === 'function') {
+        listPlayer.stopVideo();
+      }
+      document.getElementById('list-video-title').innerText = "재생 중인 코스가 없습니다.";
       map.resize();
       resetMapToInitial();
     } else {
+      closePlayer(); // 지도형 플레이어 패널 닫기 및 정지
       resetListToInitial();
     }
   }
@@ -655,6 +660,7 @@
     renderRouteList();
   }
 
+  // 유튜브 API 글로벌 콜백: 양쪽 플레이어 동시 생성 보장
   function onYouTubeIframeAPIReady() {
     player = new YT.Player('yt-player', {
       height: '100%', width: '100%',
@@ -969,6 +975,27 @@
     
     map.setFilter('routes-line', filterExpression);
     map.setFilter('routes-hitbox', filterExpression);
+
+    if (map.getLayer('boundary-sigungu-line') && map.getLayer('boundary-sigungu-fill')) {
+      if (sd === 'ALL') {
+        map.setLayoutProperty('boundary-sido-line', 'visibility', 'visible');
+        map.setLayoutProperty('boundary-sigungu-line', 'visibility', 'none');
+        map.setLayoutProperty('boundary-sigungu-fill', 'visibility', 'none');
+      } else {
+        map.setLayoutProperty('boundary-sido-line', 'visibility', 'none');
+        map.setLayoutProperty('boundary-sigungu-line', 'visibility', 'visible');
+        map.setLayoutProperty('boundary-sigungu-fill', 'visibility', 'visible');
+
+        // [수정] 시도(_sido)와 시군구(name)가 동시에 일치하는 경우에만 경계선 하이라이트 적용 (동명 자치구 버그 해결)
+        if (sgg === 'ALL') {
+          map.setFilter('boundary-sigungu-line', ['==', ['get', '_sido'], sd]);
+          map.setFilter('boundary-sigungu-fill', ['==', ['get', '_sido'], sd]);
+        } else {
+          map.setFilter('boundary-sigungu-line', ['all', ['==', ['get', '_sido'], sd], ['==', ['get', 'name'], sgg]]);
+          map.setFilter('boundary-sigungu-fill', ['all', ['==', ['get', '_sido'], sd], ['==', ['get', 'name'], sgg]]);
+        }
+      }
+    }
 
     if (filtered.length > 0) {
       try {
