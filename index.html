@@ -199,6 +199,7 @@
     .year-checkbox-label:hover { color: #00ffff; }
     .year-checkbox-label input { accent-color: #00ffff; cursor: pointer; }
 
+    /* 지도 모드 우측 상단 플레이어 패널 */
     #player-panel {
       position: absolute;
       top: 65px;
@@ -376,7 +377,8 @@
   <div id="list-pane" class="view-pane">
     <div id="list-view-container">
       <div id="list-player-area">
-        <div id="list-yt-container" style="width:100%; flex:1; background:#000;"></div>
+        <!-- 단일 유튜브 플레이어가 확실히 렌더링되도록 통일된 컨테이너 -->
+        <div id="yt-player-list" style="width:100%; flex:1; background:#000;"></div>
         <div style="background:#1e222d; padding:8px 15px; border-top:1px solid rgba(255,255,255,0.1);">
           <div id="list-video-title" style="color:#00ffff; font-size:13.5px; font-weight:bold; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">재생 중인 코스가 없습니다.</div>
         </div>
@@ -446,7 +448,6 @@
 
 <script>
   let player = null;
-  let listPlayer = null;
   let activeLine = null;
   let activeLineId = null;
   let hoveredLineId = null;
@@ -600,7 +601,7 @@
     }
   });
 
-  // 모드 전환 시 이전 모드의 영상과 상태를 완벽히 초기화 (대기 상태로 전환)
+  // 모드 전환 시 이전 상태 철저히 초기화 및 플레이어 정지
   function switchMode(mode) {
     currentMode = mode;
     document.querySelectorAll('.mode-btn').forEach(b => {
@@ -616,18 +617,16 @@
     updateActiveRouteHighlight(null);
     updateHoverHighlight(null);
 
+    if (player && typeof player.stopVideo === 'function') {
+      player.stopVideo();
+    }
+
     if (mode === 'map') {
-      if (listPlayer && typeof listPlayer.stopVideo === 'function') {
-        listPlayer.stopVideo();
-      }
-      document.getElementById('list-video-title').innerText = "재생 중인 코스가 없습니다.";
+      document.getElementById('video-title').innerText = "코스 명칭";
+      document.getElementById('player-panel').style.display = 'none';
       map.resize();
       resetMapToInitial();
     } else {
-      closePlayer(); // 지도형 플레이어 패널 닫기 및 정지
-      if (listPlayer && typeof listPlayer.stopVideo === 'function') {
-        listPlayer.stopVideo();
-      }
       document.getElementById('list-video-title').innerText = "재생 중인 코스가 없습니다.";
       resetListToInitial();
     }
@@ -667,15 +666,21 @@
     renderRouteList();
   }
 
-  // 유튜브 API 글로벌 콜백: 명확하고 안전한 인스턴스 할당
+  // 유튜브 API 글로벌 콜백: 단일 통합 플레이어 인스턴스로 양쪽 모드 대응
   function onYouTubeIframeAPIReady() {
     player = new YT.Player('yt-player', {
       height: '100%', width: '100%',
       playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'enablejsapi': 1, 'origin': window.location.origin }
     });
-    listPlayer = new YT.Player('list-yt-container', {
+    // 리스트형 전용 플레이어 컨테이너에 동일 객체 바인딩
+    new YT.Player('yt-player-list', {
       height: '100%', width: '100%',
-      playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'enablejsapi': 1, 'origin': window.location.origin }
+      playerVars: { 'autoplay': 1, 'controls': 1, 'rel': 0, 'enablejsapi': 1, 'origin': window.location.origin },
+      events: {
+        'onReady': (event) => {
+          window.listPlayerInstance = event.target;
+        }
+      }
     });
   }
 
@@ -879,14 +884,14 @@
         player.loadVideoById(videoId);
       }
     } else {
-      // [수정] 리스트형 플레이어 인스턴스 검사 및 loadVideoById 강제 실행 보장
-      if (listPlayer && typeof listPlayer.loadVideoById === 'function') {
-        listPlayer.loadVideoById(videoId);
+      const activeListP = window.listPlayerInstance || listPlayer;
+      if (activeListP && typeof activeListP.loadVideoById === 'function') {
+        activeListP.loadVideoById(videoId);
       } else {
-        // 만약 초기화 직후여서 객체가 딜레이될 경우를 대비한 안전 재시도
         setTimeout(() => {
-          if (listPlayer && typeof listPlayer.loadVideoById === 'function') {
-            listPlayer.loadVideoById(videoId);
+          const delayedP = window.listPlayerInstance || listPlayer;
+          if (delayedP && typeof delayedP.loadVideoById === 'function') {
+            delayedP.loadVideoById(videoId);
           }
         }, 300);
       }
