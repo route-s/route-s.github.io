@@ -1158,6 +1158,17 @@
     return filtered;
   }
 
+  // LIST 항목을 클릭했을 때 feature 객체를 안전하게 찾아 재생합니다.
+  // 배열의 현재 위치(_tempIndex)에 의존하지 않고, 정렬 후 부여된 고유 id를 사용합니다.
+  function playRouteById(featureId) {
+    if (!rawGeojsonData || !Array.isArray(rawGeojsonData.features)) return;
+
+    const feature = rawGeojsonData.features.find(f => f.id === featureId);
+    if (feature) {
+      playRouteFeature(feature);
+    }
+  }
+
   function renderRouteList() {
     const listScrollArea = document.getElementById('list-scroll-area');
     const features = getFilteredListFeatures();
@@ -1175,7 +1186,7 @@
       const isPlaying = (activeLineId === f.id);
 
       html += `
-        <div class="route-item ${isPlaying ? 'active-playing' : ''}" onclick='playRouteFeature(rawGeojsonData.features[${f._tempIndex}])'>
+        <div class="route-item ${isPlaying ? 'active-playing' : ''}" onclick="playRouteById(${f.id})">
           <div class="route-number">${f._globalId}</div>
           <div class="route-details">
             <div class="route-item-title">${title}</div>
