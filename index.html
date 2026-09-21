@@ -764,39 +764,113 @@
 
   map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
 
-  // [수정] 모든 형태의 유튜브 링크(URL 및 11자리 ID 직접 기입 등)를 완벽하고 안전하게 추출
-  function extractYouTubeId(url) {
-    if (!url) return null;
-    const value = String(url).trim();
+  // YouTube 영상 ID를 안전하게 추출합니다.
+  // URL, iframe/embed 코드, watch URL, shorts/live URL, 11자리 ID를 지원합니다.
+  function extractYouTubeId(value) {
+    if (value === null || value === undefined) return null;
 
-    // 만약 11자리 ID 그 자체라면 바로 반환
-    if (/^[\w-]{11}$/.test(value)) {
-      return value;
+    // GeoJSON의 description처럼 { "@type": "html", "value": "..." }
+    // 형태로 저장된 값도 처리합니다.
+    if (typeof value === 'object') {
+      const preferredKeys = ['value', 'url', 'href', 'src', 'html', 'text'];
+      for (const key of preferredKeys) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) {
+          const id = extractYouTubeId(value[key]);
+          if (id) return id;
+        }
+      }
+
+      // 예상하지 못한 중첩 구조도 한 단계 더 안전하게 탐색합니다.
+      for (const nestedValue of Object.values(value)) {
+        if (typeof nestedValue === 'string' || typeof nestedValue === 'object') {
+          const id = extractYouTubeId(nestedValue);
+          if (id) return id;
+        }
+      }
+      return null;
     }
 
+    // GeoJSON에 JSON 문자열/HTML 형태로 들어오는 경우를 대비해 이스케이프를 정리합니다.
+    const text = String(value)
+      .trim()
+      .replace(/\\\//g, '/')
+      .replace(/&amp;/gi, '&');
+
+    if (!text) return null;
+
+    // 11자리 YouTube ID 자체
+    if (/^[A-Za-z0-9_-]{11}$/.test(text)) return text;
+
+    // 일반적인 YouTube URL/iframe/HTML 안의 URL
+    const patterns = [
+      /(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*?&)?v=|embed\/|v\/|shorts\/|live\/))([A-Za-z0-9_-]{11})/i,
+      /(?:youtu\.be\/)([A-Za-z0-9_-]{11})/i
+    ];
+
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) return match[1];
+    }
+
+    // URL 객체로도 한 번 더 확인합니다.
     try {
-      const parsed = new URL(value);
-      const host = parsed.hostname.replace(/^www\./, '');
+      const parsed = new URL(text);
+      const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
 
       if (host === 'youtu.be') {
         const id = parsed.pathname.split('/').filter(Boolean)[0];
-        return id && /^[\w-]{11}$/.test(id) ? id : null;
+        if (id && /^[A-Za-z0-9_-]{11}$/.test(id)) return id;
       }
 
-      if (host.includes('youtube.com') || host.includes('youtube-nocookie.com') || host.includes('bit.ly') || host.includes('t.co')) {
+      if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
         const v = parsed.searchParams.get('v');
-        if (v && /^[\w-]{11}$/.test(v)) return v;
+        if (v && /^[A-Za-z0-9_-]{11}$/.test(v)) return v;
 
         const parts = parsed.pathname.split('/').filter(Boolean);
-        const index = ['embed', 'v', 'shorts', 'live'].indexOf(parts[0]);
-        if (index !== -1 && parts[index + 1] && /^[\w-]{11}$/.test(parts[index + 1])) {
-          return parts[index + 1];
+        if (['embed', 'v', 'shorts', 'live'].includes(parts[0])) {
+          const id = parts[1];
+          if (id && /^[A-Za-z0-9_-]{11}$/.test(id)) return id;
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      // URL이 아닌 일반 문자열인 경우 위 정규식 결과만 사용합니다.
+    }
 
-    const match = value.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:embed\/|v\/|watch\?v=|watch\?.*?[&?]v=|shorts\/|live\/))([\w-]{11})/);
-    return match ? match[1] : null;
+    return null;
+  }
+
+  // GeoJSON의 실제 필드명이 바뀌어도 YouTube 정보를 찾을 수 있도록
+  // 특정 필드 하나에 의존하지 않고 feature 전체의 속성을 검사합니다.
+  function extractYouTubeIdFromFeature(feature) {
+    if (!feature) return null;
+
+    const props = feature.properties || {};
+    const directCandidates = [
+      feature.videoId, feature.youtubeId, feature.youtube, feature.video,
+      feature.videoUrl, feature.youtubeUrl, feature.url, feature.link,
+      props.videoId, props.video_id, props.youtubeId, props.youtube_id,
+      props.youtube, props.video, props.videoUrl, props.video_url,
+      props.youtubeUrl, props.youtube_url, props.url, props.link,
+      props.gx_media_links, props.description, props.Description, props.name, props.Name
+    ];
+
+    for (const candidate of directCandidates) {
+      const id = extractYouTubeId(candidate);
+      if (id) return id;
+    }
+
+    // 위에서 명시적으로 지정하지 않은 속성명에도 대응합니다.
+    for (const [key, value] of Object.entries(props)) {
+      if (typeof value !== 'string') continue;
+
+      const keyLower = key.toLowerCase();
+      const id = extractYouTubeId(value);
+      if (id && (/youtube|video/.test(keyLower) || /youtube(?:-nocookie)?\.com|youtu\.be/i.test(value))) {
+        return id;
+      }
+    }
+
+    return null;
   }
 
   function zoomToActiveLine() {
@@ -848,6 +922,8 @@
       rawGeojsonData.features.forEach((f, index) => {
         f.id = index;
         f._globalId = index + 1;
+        // 영상 ID를 데이터 로딩 시 한 번 확정해 두어 MAP/LIST가 동일한 값을 사용하도록 합니다.
+        f._youtubeId = extractYouTubeIdFromFeature(f);
         const p = f.properties || {};
         const c = p.country || "대한민국";
         const sidos = (p.sido || "").split(',').map(s => s.trim()).filter(Boolean);
@@ -927,15 +1003,6 @@
 
     map.on('click', 'routes-hitbox', (e) => {
       const clickedFeat = e.features[0];
-      const props = clickedFeat.properties || {};
-      const videoId = extractYouTubeId(props.description || props.Description || '') ||
-                      extractYouTubeId(props.url || props.link || '') ||
-                      extractYouTubeId(props.name || props.Name || '');
-      
-      if (!videoId) {
-        alert("이 코스는 유튜브 영상 연결 준비 중입니다.");
-        return;
-      }
       playRouteFeature(clickedFeat);
     });
   });
@@ -945,12 +1012,18 @@
     activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
     const props = activeLine.properties || {};
     
-    const videoId = extractYouTubeId(props.description || props.Description || '') ||
-                    extractYouTubeId(props.url || props.link || '') ||
-                    extractYouTubeId(props.name || props.Name || '');
+    const videoId = activeLine._youtubeId || extractYouTubeIdFromFeature(activeLine);
+    activeLine._youtubeId = videoId || null;
 
     if (!videoId) {
-      alert("이 코스는 유튜브 영상 연결 준비 중입니다.");
+      // 영상 정보가 없는 데이터는 기존 영상이 남아 보이지 않도록 정리하고,
+      // 브라우저 alert 대신 조용히 선택 상태만 유지합니다.
+      document.getElementById('video-title').innerText = `${activeLine._globalId || ''}. ${props.name || props.Name || '도보 코스'} (영상 연결 정보 없음)`;
+      document.getElementById('player-panel').style.display = 'flex';
+      if (player && playerReady && typeof player.stopVideo === 'function') {
+        try { player.stopVideo(); } catch (e) {}
+      }
+      if (currentMode === 'list') renderRouteList();
       return;
     }
 
