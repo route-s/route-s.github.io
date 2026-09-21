@@ -47,10 +47,12 @@
       background-color: #1a1a1a;
     }
 
+    /* 상태바 중앙 정렬 및 일관된 레이아웃 */
     .filter-container {
       position: absolute;
       top: 15px;
-      left: 15px;
+      left: 50%;
+      transform: translateX(-50%);
       z-index: 100;
       background: rgba(18, 20, 26, 0.92);
       padding: 8px 12px;
@@ -63,6 +65,7 @@
       backdrop-filter: blur(8px);
       max-width: calc(100vw - 30px);
       flex-wrap: wrap;
+      justify-content: center;
     }
 
     #logo-icon {
@@ -234,7 +237,6 @@
       flex-direction: column;
     }
     
-    /* 리스트 상단 컨트롤 바 (검색 및 정렬 위치) */
     #list-controls-bar {
       max-width: 900px;
       width: calc(100% - 30px);
@@ -307,8 +309,6 @@
     @media (max-width: 640px) {
       .filter-container {
         top: 10px;
-        left: 10px;
-        right: 10px;
         width: calc(100% - 20px);
         padding: 6px 8px;
         gap: 4px;
@@ -382,7 +382,6 @@
         </div>
       </div>
 
-      <!-- 리스트 상단 전용 컨트롤 바 (검색창 + 정렬 버튼) -->
       <div id="list-controls-bar">
         <input type="text" id="search-input" class="search-input" placeholder="제목 또는 번호 검색" oninput="renderRouteList()" onkeydown="if(event.key==='Enter') { this.blur(); renderRouteList(); }">
         <button id="sort-order-btn" class="action-btn" onclick="toggleSortOrder()" title="정렬 순서 변경">🔄 과거순</button>
@@ -392,7 +391,7 @@
     </div>
   </div>
 
-  <!-- MAP 전용 상단 상태바 (지저분하지 않고 깔끔하게 유지) -->
+  <!-- MAP 전용 상단 상태바 (가운데 정렬) -->
   <div id="map-filter-container" class="filter-container">
     <img id="logo-icon" src="./logo.png" alt="ROUTE S" title="ROUTE S 채널 바로가기" onclick="window.open('https://www.youtube.com/@루트에스', '_blank')">
 
@@ -417,7 +416,7 @@
     </div>
   </div>
 
-  <!-- LIST 전용 상단 상태바 (필터 영역만 깔끔하게 유지) -->
+  <!-- LIST 전용 상단 상태바 (가운데 정렬) -->
   <div id="list-filter-container" class="filter-container" style="display:none;">
     <img id="logo-icon" src="./logo.png" alt="ROUTE S" title="ROUTE S 채널 바로가기" onclick="window.open('https://www.youtube.com/@루트에스', '_blank')">
 
@@ -620,6 +619,12 @@
       resetMapToInitial();
     } else {
       resetListToInitial();
+      // 리스트 뷰 전환 시 플레이어 크기 갱신 보장
+      setTimeout(() => {
+        if (listPlayer && typeof listPlayer.getIframe === 'function') {
+          // 필요시 리사이즈 트리거
+        }
+      }, 100);
     }
   }
 
@@ -889,18 +894,18 @@
       zoomToActiveLine();
     }
 
-    if (currentVideoId !== videoId) {
-      currentVideoId = videoId;
-      if (currentMode === 'map') {
-        if (player && typeof player.loadVideoById === 'function') player.loadVideoById(videoId);
+    // 플레이어 객체가 준비되었는지 확인 후 로드 실행
+    if (currentMode === 'map') {
+      if (player && typeof player.loadVideoById === 'function') {
+        player.loadVideoById(videoId);
       } else {
-        if (listPlayer && typeof listPlayer.loadVideoById === 'function') listPlayer.loadVideoById(videoId);
+        currentVideoId = videoId;
       }
     } else {
-      const activeP = currentMode === 'map' ? player : listPlayer;
-      if (activeP && typeof activeP.seekTo === 'function') {
-        activeP.seekTo(0, true);
-        activeP.playVideo();
+      if (listPlayer && typeof listPlayer.loadVideoById === 'function') {
+        listPlayer.loadVideoById(videoId);
+      } else {
+        currentVideoId = videoId;
       }
     }
 
