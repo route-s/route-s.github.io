@@ -267,9 +267,20 @@
     "구로구", "금천구", "영등포구", "동작구", "관악구", "서초구", "강남구", "송파구", "강동구"
   ]);
 
+  // 국가 영문 명칭 매핑 (대한민국 -> South Korea)
   const COUNTRY_EN_MAP = {
-    "대한민국": "Korea", "일본": "Japan", "싱가포르": "Singapore",
-    "남아프리카공화국": "RSA", "대만": "Taiwan", "미국": "USA"
+    "대한민국": "South Korea", "일본": "Japan", "싱가포르": "Singapore",
+    "남아프리카공화국": "RSA", "대만": "Taiwan", "미국": "USA",
+    "베트남": "Vietnam", "캐나다": "Canada", "홍콩": "Hong Kong"
+  };
+
+  // 시도 간소화 명칭 매핑
+  const SIDO_SHORT_MAP = {
+    "서울특별시": "서울", "부산광역시": "부산", "대구광역시": "대구", "인천광역시": "인천",
+    "광주광역시": "광주", "대전광역시": "대전", "울산광역시": "울산", "세종특별자치시": "세종",
+    "경기도": "경기", "강원특별자치도": "강원", "충청북도": "충북", "충청남도": "충남",
+    "전북특별자치도": "전북", "전라남도": "전남", "경상북도": "경북", "경상남도": "경남",
+    "제주특별자치도": "제주"
   };
 
   const SIDO_EN_MAP = {
@@ -279,6 +290,14 @@
     "전북특별자치도": "Jeonbuk", "전라남도": "Jeonnam", "경상북도": "Gyeongbuk", "경상남도": "Gyeongnam",
     "제주특별자치도": "Jeju"
   };
+
+  // 요청하신 시도 코드별 정렬 순서 정의 (서울, 부산 순...)
+  const SIDO_SORT_ORDER = [
+    "서울특별시", "부산광역시", "대구광역시", "인천광역시",
+    "광주광역시", "대전광역시", "울산광역시", "세종특별자치시",
+    "경기도", "강원특별자치도", "충청북도", "충청남도",
+    "전북특별자치도", "전라남도", "경상북도", "경상남도", "제주특별자치도"
+  ];
 
   const KOR_SIDO_CODE_MAP = {
     "11": "서울특별시", "21": "부산광역시", "22": "대구광역시", "23": "인천광역시",
@@ -307,8 +326,9 @@
 
   function formatSidoLabel(val) {
     if (val === "ALL") return "2: 시·도 (State)";
+    const shortName = SIDO_SHORT_MAP[val] || val;
     const en = SIDO_EN_MAP[val] || val;
-    return `${val} (${en})`;
+    return `${shortName} (${en})`;
   }
 
   function formatSigunguLabel(val) {
@@ -330,27 +350,25 @@
     return match ? match[1] : null;
   }
 
-  // [강화된 매칭] 시군구 이름이 서울 자치구인지 판별하여 올바른 시도와 1:1 스마트 매칭
   function formatLocationTag(props) {
     const country = props.country || "대한민국";
-    if (country !== "대한민국") return `[${country}]`;
+    if (country !== "대한민국") return `[${COUNTRY_EN_MAP[country] || country}]`;
 
     const sidos = (props.sido || "").split(',').map(s => s.trim()).filter(Boolean);
     const sigs = (props.sigungu || "").split(',').map(s => s.trim()).filter(Boolean);
 
     if (sigs.length === 0) {
-      return sidos.length > 0 ? `[${sidos.join(', ')}]` : "";
+      return sidos.length > 0 ? `[${sidos.map(sd => SIDO_SHORT_MAP[sd] || sd).join(', ')}]` : "";
     }
 
     let pairs = [];
     sigs.forEach(sig => {
-      // 서울 자치구인 경우 무조건 서울특별시로 고정 매칭
       if (SEOUL_DISTRICTS.has(sig)) {
-        pairs.push(`서울특별시 ${sig}`);
+        pairs.push(`서울 ${sig}`);
       } else {
-        // 그 외의 경우 경기도 등 올바른 시도 매칭 (sido 배열에 있으면 사용, 없으면 기본값)
         let matchedSido = sidos.find(sd => sd !== "서울특별시") || sidos[0] || "경기도";
-        pairs.push(`${matchedSido} ${sig}`);
+        const shortSd = SIDO_SHORT_MAP[matchedSido] || matchedSido;
+        pairs.push(`${shortSd} ${sig}`);
       }
     });
 
@@ -737,6 +755,7 @@
   function buildDynamicFilters() {
     countrySelect.innerHTML = `<option value="ALL">${formatCountryLabel('ALL')}</option>`;
 
+    // 국가 목록 정렬 (대한민국 우선)
     const countries = Object.keys(adminHierarchy).sort((a, b) => {
       if (a === '대한민국') return -1;
       if (b === '대한민국') return 1;
@@ -754,8 +773,11 @@
 
       if (c === '대한민국' && adminHierarchy[c]) {
         sidoSelect.disabled = false;
-        Object.keys(adminHierarchy[c]).sort().forEach(sido => {
-          sidoSelect.innerHTML += `<option value="${sido}">${formatSidoLabel(sido)}</option>`;
+        // 요청하신 시도 코드 순서(SIDO_SORT_ORDER)에 맞춰 필터 목록 생성
+        SIDO_SORT_ORDER.forEach(sido => {
+          if (adminHierarchy[c][sido]) {
+            sidoSelect.innerHTML += `<option value="${sido}">${formatSidoLabel(sido)}</option>`;
+          }
         });
         sigunguSelect.disabled = true;
       } else {
