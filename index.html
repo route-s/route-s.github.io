@@ -513,7 +513,8 @@
   const COUNTRY_EN_MAP = {
     "대한민국": "South Korea", "일본": "Japan", "싱가포르": "Singapore",
     "남아프리카공화국": "RSA", "대만": "Taiwan", "미국": "USA",
-    "베트남": "Vietnam", "캐나다": "Canada", "홍콩": "Hong Kong"
+    "베트남": "Vietnam", "캐나다": "Canada", "홍콩": "Hong Kong",
+    "러시아": "Russia"
   };
 
   const SIDO_SHORT_MAP = {
@@ -557,6 +558,18 @@
     "고양시일산서구": "Ilsanseo-gu", "성남시분당구": "Bundang-gu", "수원시팔달구": "Paldal-gu",
     "광명시": "Gwangmyeong-si", "제주시": "Jeju-si", "서귀포시": "Seogwipo-si"
   };
+
+  // [예외 보정 함수] 블라디보스톡 등 공간 연산 오차가 발생하는 특정 지역 국가 강제 보정
+  function getCorrectedCountry(feature) {
+    const props = feature.properties || {};
+    const text = (props.name || "") + " " + (props.Name || "") + " " + (props.description || "") + " " + (props.Description || "");
+    const lowerText = text.toLowerCase();
+
+    if (lowerText.includes('vladivostok') || lowerText.includes('블라디보스톡')) {
+      return "러시아";
+    }
+    return props.country || "대한민국";
+  }
 
   function formatCountryLabel(val) {
     if (val === "ALL") return "1: 국가 전체 (All)";
@@ -919,8 +932,12 @@
         f.id = index;
         f._globalId = index + 1;
         f._youtubeId = extractYouTubeIdFromFeature(f);
+        
         const p = f.properties || {};
-        const c = p.country || "대한민국";
+        // [예외 보정 적용] 블라디보스톡 등 오류 지역 국가 강제 보정
+        const c = getCorrectedCountry(f);
+        p.country = c;
+
         const sidos = (p.sido || "").split(',').map(s => s.trim()).filter(Boolean);
         const sigs = (p.sigungu || "").split(',').map(s => s.trim()).filter(Boolean);
 
