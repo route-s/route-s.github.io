@@ -989,6 +989,7 @@
       buildFilterDropdowns('list');
 
       resetMapToInitial();
+      openRouteFromUrl();
     });
 
     const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
@@ -1018,7 +1019,25 @@
       playRouteFeature(clickedFeat);
     });
   });
+function openRouteFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const routeCode = params.get('route');
 
+  if (!routeCode || !rawGeojsonData) return;
+
+  const feature = rawGeojsonData.features.find(f => {
+    const p = f.properties || {};
+    return String(p.code || '').trim() === routeCode.trim();
+  });
+
+  if (!feature) {
+    console.warn('URL에서 해당 루트를 찾을 수 없습니다:', routeCode);
+    return;
+  }
+
+  // 해당 루트 선택 및 영상 재생
+  playRouteFeature(feature);
+}
   function playRouteFeature(feature) {
     activeLine = feature;
     activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
