@@ -688,29 +688,22 @@
     }, 100);
   }
 
+  // [완벽 복구] 드롭다운을 깨트리지 않고, 첫 진입 시 국가와 시도를 안전하게 대한민국 > 서울로 세팅하면서 지도만 서울로 이동
   function resetMapToInitial() {
     const cSel = document.getElementById('map-country-select');
     const sdSel = document.getElementById('map-sido-select');
     
-    cSel.value = "대한민국";
+    if (cSel) {
+      cSel.value = "대한민국";
+      cSel.dispatchEvent(new Event('change')); // 국가 변경 이벤트 태워 시도 목록 정상 빌드
+    }
     
-    // 강제로 드롭다운 옵션을 채우고 서울특별시 선택 활성화
-    sdSel.disabled = false;
-    sdSel.innerHTML = `<option value="ALL">${formatSidoLabel('ALL')}</option>`;
-    SIDO_SORT_ORDER.forEach(sido => {
-      if (adminHierarchy["대한민국"] && adminHierarchy["대한민국"][sido]) {
-        sdSel.innerHTML += `<option value="${sido}">${formatSidoLabel(sido)}</option>`;
-      }
-    });
-    sdSel.value = "서울특별시";
-
-    // 시군구 초기화
-    const sgSel = document.getElementById('map-sigungu-select');
-    sgSel.innerHTML = `<option value="ALL">${formatSigunguLabel('ALL')}</option>`;
-    sgSel.disabled = true;
+    if (sdSel) {
+      sdSel.value = "서울특별시";
+      sdSel.dispatchEvent(new Event('change')); // 시도 변경 이벤트 태워 시군구 목록 연동
+    }
 
     map.jumpTo({ center: [126.9780, 37.5665], zoom: 11 });
-    applyMapFilter();
   }
 
   function resetListToInitial() {
@@ -1003,7 +996,7 @@
       buildFilterDropdowns('map');
       buildFilterDropdowns('list');
 
-      // 데이터 빌드가 끝난 후 초기화 함수 안전 호출
+      // 드롭다운 세팅 및 데이터 빌드가 모두 끝난 후 초기화 함수 실행
       resetMapToInitial();
       openRouteFromUrl();
     });
