@@ -688,13 +688,29 @@
     }, 100);
   }
 
+  // [수정된 부분] 첫 진입 시 fitBounds로 인해 지도가 전 세계로 튀는 현상을 막기 위해 강제 이벤트 대신 안전하게 서울 중심 및 뷰를 잡아주도록 변경
   function resetMapToInitial() {
     const cSel = document.getElementById('map-country-select');
     const sdSel = document.getElementById('map-sido-select');
+    const sgSel = document.getElementById('map-sigungu-select');
+    
     cSel.value = "대한민국";
-    cSel.dispatchEvent(new Event('change'));
+    
+    sdSel.disabled = false;
+    sdSel.innerHTML = `<option value="ALL">${formatSidoLabel('ALL')}</option>`;
+    SIDO_SORT_ORDER.forEach(sido => {
+      if (adminHierarchy["대한민국"] && adminHierarchy["대한민국"][sido]) {
+        sdSel.innerHTML += `<option value="${sido}">${formatSidoLabel(sido)}</option>`;
+      }
+    });
     sdSel.value = "서울특별시";
-    sdSel.dispatchEvent(new Event('change'));
+
+    sgSel.innerHTML = `<option value="ALL">${formatSigunguLabel('ALL')}</option>`;
+    sgSel.disabled = true;
+
+    // 강제 fitBounds 대신 안전한 서울 기본 뷰 및 필터 적용
+    map.jumpTo({ center: [126.9780, 37.5665], zoom: 11 });
+    applyMapFilter();
   }
 
   function resetListToInitial() {
@@ -934,7 +950,6 @@
         f._youtubeId = extractYouTubeIdFromFeature(f);
         
         const p = f.properties || {};
-        // [예외 보정 적용] 블라디보스톡 등 오류 지역 국가 강제 보정
         const c = getCorrectedCountry(f);
         p.country = c;
 
@@ -1019,25 +1034,26 @@
       playRouteFeature(clickedFeat);
     });
   });
-function openRouteFromUrl() {
-  const params = new URLSearchParams(window.location.search);
-  const routeCode = params.get('route');
 
-  if (!routeCode || !rawGeojsonData) return;
+  function openRouteFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const routeCode = params.get('route');
 
-  const feature = rawGeojsonData.features.find(f => {
-    const p = f.properties || {};
-    return String(p.code || '').trim() === routeCode.trim();
-  });
+    if (!routeCode || !rawGeojsonData) return;
 
-  if (!feature) {
-    console.warn('URL에서 해당 루트를 찾을 수 없습니다:', routeCode);
-    return;
+    const feature = rawGeojsonData.features.find(f => {
+      const p = f.properties || {};
+      return String(p.code || '').trim() === routeCode.trim();
+    });
+
+    if (!feature) {
+      console.warn('URL에서 해당 루트를 찾을 수 없습니다:', routeCode);
+      return;
+    }
+
+    playRouteFeature(feature);
   }
 
-  // 해당 루트 선택 및 영상 재생
-  playRouteFeature(feature);
-}
   function playRouteFeature(feature) {
     activeLine = feature;
     activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
