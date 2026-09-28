@@ -342,7 +342,7 @@
     #close-btn { right: 8px; font-size: 16px; }
     #split-btn { right: 42px; font-size: 13px; }
 
-    /* 모바일 및 작은 화면 반응형 최적화 (상태바 잘림 방지 및 좌우 스크롤 허용) */
+    /* 모바일 및 작은 화면 반응형 최적화 */
     @media (max-width: 768px) {
       .filter-container {
         top: 8px;
@@ -406,7 +406,6 @@
 <body class="map-mode">
 
 <div id="app-container">
-  <!-- 단일 공용 유튜브 플레이어 패널 -->
   <div id="player-panel">
     <button id="split-btn" class="panel-btn" onclick="toggleSplitMode()" title="화면 상하 분할 / 팝업 토글">◫</button>
     <button id="close-btn" class="panel-btn" onclick="closePlayer()" title="닫기">×</button>
@@ -416,26 +415,22 @@
     </div>
   </div>
 
-  <!-- 1. MAP VIEW PANE -->
   <div id="map-pane" class="view-pane active">
     <div id="map-wrapper">
       <div id="map"></div>
     </div>
   </div>
 
-  <!-- 2. LIST VIEW PANE -->
   <div id="list-pane" class="view-pane">
     <div id="list-view-container">
       <div id="list-controls-bar">
         <input type="text" id="search-input" class="search-input" placeholder="제목 또는 번호 검색" oninput="renderRouteList()" onkeydown="if(event.key==='Enter') { this.blur(); renderRouteList(); }">
         <button id="sort-order-btn" class="action-btn" onclick="toggleSortOrder()" title="정렬 순서 변경">🔄 과거순</button>
       </div>
-
       <div id="list-scroll-area"></div>
     </div>
   </div>
 
-  <!-- MAP 전용 상단 상태바 -->
   <div id="map-filter-container" class="filter-container">
     <img id="logo-icon" src="./logo.png" alt="ROUTE S" title="ROUTE S 채널 바로가기" onclick="window.open('https://www.youtube.com/@루트에스', '_blank')">
 
@@ -460,7 +455,6 @@
     </div>
   </div>
 
-  <!-- LIST 전용 상단 상태바 -->
   <div id="list-filter-container" class="filter-container" style="display:none;">
     <img id="logo-icon" src="./logo.png" alt="ROUTE S" title="ROUTE S 채널 바로가기" onclick="window.open('https://www.youtube.com/@루트에스', '_blank')">
 
@@ -514,7 +508,7 @@
     "대한민국": "South Korea", "일본": "Japan", "싱가포르": "Singapore",
     "남아프리카공화국": "RSA", "대만": "Taiwan", "미국": "USA",
     "베트남": "Vietnam", "캐나다": "Canada", "홍콩": "Hong Kong",
-    "러시아": "Russia"
+    "러시아": "Russia", "중국": "China", "말레이시아": "Malaysia", "마카오": "Macau"
   };
 
   const SIDO_SHORT_MAP = {
@@ -557,10 +551,13 @@
     const text = (props.name || "") + " " + (props.Name || "") + " " + (props.description || "") + " " + (props.Description || "");
     const lowerText = text.toLowerCase();
 
-    if (lowerText.includes('vladivostok') || lowerText.includes('블라디보스톡')) {
-      return "러시아";
-    }
-    return "대한민국"; 
+    // 110m 저해상도 지도 문제로 인접 국가로 오인식되는 지역을 강제로 올바르게 분류합니다.
+    if (lowerText.includes('vladivostok') || lowerText.includes('블라디보스톡')) return "러시아";
+    if (lowerText.includes('singapore') || lowerText.includes('싱가포르') || lowerText.includes('싱가폴')) return "싱가포르";
+    if (lowerText.includes('hong kong') || lowerText.includes('홍콩')) return "홍콩";
+    if (lowerText.includes('macau') || lowerText.includes('마카오')) return "마카오";
+    
+    return null; 
   }
 
   function formatCountryLabel(val) {
@@ -937,6 +934,7 @@
         const p = f.properties || {};
         f.properties = p;
         
+        // 1. 강제 예외 처리 확인 (싱가포르, 홍콩 등)
         let c = getCorrectedCountry(f); 
         let sidos = new Set();
         let sigs = new Set();
@@ -947,38 +945,43 @@
             const lon = startPt.geometry.coordinates[0][0] || startPt.geometry.coordinates[0];
             const lat = startPt.geometry.coordinates[0][1] || startPt.geometry.coordinates[1];
             
-            // [최적화] 1. 한국 범위(Bbox)에 들면 전 세계 연산을 완전히 생략하여 렉을 방지함
-            let isKorea = (lon >= 124.0 && lon <= 132.0 && lat >= 33.0 && lat <= 39.0);
-            
-            if (isKorea) {
-              c = '대한민국';
-            } else if (worldGeo && worldGeo.features) {
-              for (const wf of worldGeo.features) {
-                if (turf.booleanPointInPolygon(startPt, wf)) {
-                  let wName = wf.properties.NAME || wf.properties.ADMIN || wf.properties.name;
-                  if (wName === 'South Korea') { c = '대한민국'; break; }
-                  else if (wName === 'Japan') { c = '일본'; break; }
-                  else if (wName === 'Taiwan') { c = '대만'; break; }
-                  else if (wName === 'Singapore') { c = '싱가포르'; break; }
-                  else if (wName === 'Vietnam') { c = '베트남'; break; }
-                  else if (wName === 'Canada') { c = '캐나다'; break; }
-                  else if (wName === 'Russia') { c = '러시아'; break; }
-                  else if (wName === 'United States of America' || wName === 'United States') { c = '미국'; break; }
-                  else if (wName === 'South Africa') { c = '남아프리카공화국'; break; }
-                  else if (wName && wName !== 'South Korea') { c = wName; break; }
+            // 2. 하드코딩된 예외에 걸리지 않았을 때만 위치 연산 실행
+            if (!c) {
+                let isKorea = (lon >= 124.0 && lon <= 132.0 && lat >= 33.0 && lat <= 39.0);
+                
+                if (isKorea) {
+                  c = '대한민국';
+                } else if (worldGeo && worldGeo.features) {
+                  for (const wf of worldGeo.features) {
+                    if (turf.booleanPointInPolygon(startPt, wf)) {
+                      let wName = wf.properties.NAME || wf.properties.ADMIN || wf.properties.name;
+                      if (wName === 'South Korea') { c = '대한민국'; break; }
+                      else if (wName === 'Japan') { c = '일본'; break; }
+                      else if (wName === 'Taiwan') { c = '대만'; break; }
+                      else if (wName === 'Singapore') { c = '싱가포르'; break; }
+                      else if (wName === 'Vietnam') { c = '베트남'; break; }
+                      else if (wName === 'Canada') { c = '캐나다'; break; }
+                      else if (wName === 'Russia') { c = '러시아'; break; }
+                      else if (wName === 'United States of America' || wName === 'United States') { c = '미국'; break; }
+                      else if (wName === 'South Africa') { c = '남아프리카공화국'; break; }
+                      else if (wName === 'China') { c = '중국'; break; }
+                      else if (wName === 'Malaysia') { c = '말레이시아'; break; }
+                      else if (wName && wName !== 'South Korea') { c = wName; break; }
+                    }
+                  }
                 }
-              }
             }
-            
+            if (!c) c = '대한민국'; // 최종 보험용
+
             p.country = c;
 
-            // [오류 수정 및 최적화] 2. 대한민국 시도, 시군구 판별 연산 복구
+            // 3. 대한민국일 때만 시도, 시군구 판별
             if (c === "대한민국") {
               if (sidoGeo && sidoGeo.features) {
                 for (const sidoF of sidoGeo.features) {
                   if (turf.booleanPointInPolygon(startPt, sidoF)) {
                     sidos.add(sidoF.properties.name || sidoF.properties.CTP_KOR_NM);
-                    break; // [핵심 속도 개선] 일치하는 지역을 찾으면 나머지 수십 개 루프 검사를 생략함
+                    break; 
                   }
                 }
               }
@@ -986,7 +989,7 @@
                 for (const sigF of sigunguGeo.features) {
                   if (turf.booleanPointInPolygon(startPt, sigF)) {
                     sigs.add(sigF.properties.name || sigF.properties.SIG_KOR_NM);
-                    break; // [핵심 속도 개선] 일치하는 지역을 찾으면 나머지 200여 개 루프 검사를 생략함
+                    break; 
                   }
                 }
               }
