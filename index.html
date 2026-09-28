@@ -480,8 +480,6 @@
   </div>
 </div>
 
-<script src="https://www.youtube.com/iframe_api"></script>
-
 <script>
   let player = null;
   let playerReady = false;
@@ -497,6 +495,11 @@
   let isSplitMode = false;
   let currentMode = 'map';
   let sortAscending = true;
+
+  // [수정 포인트] 유튜브 IFrame API를 하드코딩하지 않고, 스크립트가 로딩될 때 안전하게 동적으로 불러옵니다.
+  const ytScript = document.createElement('script');
+  ytScript.src = "https://www.youtube.com/iframe_api";
+  document.head.appendChild(ytScript);
 
   const SEOUL_DISTRICTS = new Set([
     "종로구", "중구", "용산구", "성동구", "광진구", "동대문구", "중랑구", "성북구",
@@ -551,7 +554,6 @@
     const text = (props.name || "") + " " + (props.Name || "") + " " + (props.description || "") + " " + (props.Description || "");
     const lowerText = text.toLowerCase();
 
-    // 110m 저해상도 지도 문제로 인접 국가로 오인식되는 지역을 강제로 올바르게 분류합니다.
     if (lowerText.includes('vladivostok') || lowerText.includes('블라디보스톡')) return "러시아";
     if (lowerText.includes('singapore') || lowerText.includes('싱가포르') || lowerText.includes('싱가폴')) return "싱가포르";
     if (lowerText.includes('hong kong') || lowerText.includes('홍콩')) return "홍콩";
@@ -934,7 +936,6 @@
         const p = f.properties || {};
         f.properties = p;
         
-        // 1. 강제 예외 처리 확인 (싱가포르, 홍콩 등)
         let c = getCorrectedCountry(f); 
         let sidos = new Set();
         let sigs = new Set();
@@ -945,7 +946,6 @@
             const lon = startPt.geometry.coordinates[0][0] || startPt.geometry.coordinates[0];
             const lat = startPt.geometry.coordinates[0][1] || startPt.geometry.coordinates[1];
             
-            // 2. 하드코딩된 예외에 걸리지 않았을 때만 위치 연산 실행
             if (!c) {
                 let isKorea = (lon >= 124.0 && lon <= 132.0 && lat >= 33.0 && lat <= 39.0);
                 
@@ -971,11 +971,10 @@
                   }
                 }
             }
-            if (!c) c = '대한민국'; // 최종 보험용
+            if (!c) c = '대한민국';
 
             p.country = c;
 
-            // 3. 대한민국일 때만 시도, 시군구 판별
             if (c === "대한민국") {
               if (sidoGeo && sidoGeo.features) {
                 for (const sidoF of sidoGeo.features) {
