@@ -560,7 +560,7 @@
     if (lowerText.includes('vladivostok') || lowerText.includes('블라디보스톡')) {
       return "러시아";
     }
-    return "대한민국"; // 기본값, 이후 공간연산으로 덮어씀
+    return "대한민국"; 
   }
 
   function formatCountryLabel(val) {
@@ -929,7 +929,6 @@
 
       rawGeojsonData.features.sort((a, b) => a._timestamp - b._timestamp);
       
-      // ====== 📍 완벽 복구된 Turf.js 공간 연산 로직 시작 ======
       rawGeojsonData.features.forEach((f, index) => {
         f.id = index;
         f._globalId = index + 1;
@@ -944,14 +943,19 @@
 
         try {
           if (f.geometry && f.geometry.coordinates && f.geometry.coordinates.length > 0) {
-            // 경로의 첫 번째 점(Start Point) 기준으로 소속 행정구역 추출
             const startPt = turf.point(f.geometry.coordinates[0]);
-
-            // 1. 해외 국가 판별
-            if (worldGeo && worldGeo.features) {
+            const lon = startPt.geometry.coordinates[0][0] || startPt.geometry.coordinates[0];
+            const lat = startPt.geometry.coordinates[0][1] || startPt.geometry.coordinates[1];
+            
+            // [최적화] 1. 한국 범위(Bbox)에 들면 전 세계 연산을 완전히 생략하여 렉을 방지함
+            let isKorea = (lon >= 124.0 && lon <= 132.0 && lat >= 33.0 && lat <= 39.0);
+            
+            if (isKorea) {
+              c = '대한민국';
+            } else if (worldGeo && worldGeo.features) {
               for (const wf of worldGeo.features) {
                 if (turf.booleanPointInPolygon(startPt, wf)) {
-                  let wName = wf.properties.NAME || wf.properties.ADMIN;
+                  let wName = wf.properties.NAME || wf.properties.ADMIN || wf.properties.name;
                   if (wName === 'South Korea') { c = '대한민국'; break; }
                   else if (wName === 'Japan') { c = '일본'; break; }
                   else if (wName === 'Taiwan') { c = '대만'; break; }
@@ -965,34 +969,35 @@
                 }
               }
             }
+            
             p.country = c;
 
-            // 2. 대한민국 시도, 시군구 판별
+            // [오류 수정 및 최적화] 2. 대한민국 시도, 시군구 판별 연산 복구
             if (c === "대한민국") {
               if (sidoGeo && sidoGeo.features) {
                 for (const sidoF of sidoGeo.features) {
                   if (turf.booleanPointInPolygon(startPt, sidoF)) {
-                    sidos.add(sidoF.properties.CTP_KOR_NM);
+                    sidos.add(sidoF.properties.name || sidoF.properties.CTP_KOR_NM);
+                    break; // [핵심 속도 개선] 일치하는 지역을 찾으면 나머지 수십 개 루프 검사를 생략함
                   }
                 }
               }
               if (sigunguGeo && sigunguGeo.features) {
                 for (const sigF of sigunguGeo.features) {
                   if (turf.booleanPointInPolygon(startPt, sigF)) {
-                    sigs.add(sigF.properties.SIG_KOR_NM);
+                    sigs.add(sigF.properties.name || sigF.properties.SIG_KOR_NM);
+                    break; // [핵심 속도 개선] 일치하는 지역을 찾으면 나머지 200여 개 루프 검사를 생략함
                   }
                 }
               }
             }
           }
         } catch (e) {
-          console.error("공간 연산 처리 중 에러 발생:", e);
+          console.error(e);
         }
 
-        // 연산된 값을 프로퍼티에 할당하여 사이트 드롭다운 로직에 태움
         p.sido = sidos.size > 0 ? Array.from(sidos).join(', ') : (p.sido || "");
         p.sigungu = sigs.size > 0 ? Array.from(sigs).join(', ') : (p.sigungu || "");
-        // ====== 📍 Turf.js 공간 연산 로직 끝 ======
 
         const yr = extractYear(f);
         if (yr) availableYears.add(yr);
