@@ -540,13 +540,6 @@
     "전북특별자치도", "전라남도", "경상북도", "경상남도", "제주특별자치도"
   ];
 
-  const KOR_SIDO_CODE_MAP = {
-    "11": "서울특별시", "21": "부산광역시", "22": "대구광역시", "23": "인천광역시",
-    "24": "광주광역시", "25": "대전광역시", "26": "울산광역시", "29": "세종특별자치시",
-    "31": "경기도", "32": "강원특별자치도", "33": "충청북도", "34": "충청남도",
-    "35": "전북특별자치도", "36": "전라남도", "37": "경상북도", "38": "경상남도", "39": "제주특별자치도"
-  };
-
   const DISTRICT_EN_MAP = {
     "종로구": "Jongno-gu", "중구": "Jung-gu", "용산구": "Yongsan-gu", "성동구": "Seongdong-gu",
     "광진구": "Gwangjin-gu", "동대문구": "Dongdaemun-gu", "중랑구": "Jungnang-gu", "성북구": "Sungbuk-gu",
@@ -559,7 +552,6 @@
     "광명시": "Gwangmyeong-si", "제주시": "Jeju-si", "서귀포시": "Seogwipo-si"
   };
 
-  // [예외 보정 함수] 블라디보스톡 등 공간 연산 오차가 발생하는 특정 지역 국가 강제 보정
   function getCorrectedCountry(feature) {
     const props = feature.properties || {};
     const text = (props.name || "") + " " + (props.Name || "") + " " + (props.description || "") + " " + (props.Description || "");
@@ -568,7 +560,7 @@
     if (lowerText.includes('vladivostok') || lowerText.includes('블라디보스톡')) {
       return "러시아";
     }
-    return props.country || "대한민국";
+    return "대한민국"; // 기본값, 이후 공간연산으로 덮어씀
   }
 
   function formatCountryLabel(val) {
@@ -688,19 +680,18 @@
     }, 100);
   }
 
-  // [완벽 복구] 드롭다운을 깨트리지 않고, 첫 진입 시 국가와 시도를 안전하게 대한민국 > 서울로 세팅하면서 지도만 서울로 이동
   function resetMapToInitial() {
     const cSel = document.getElementById('map-country-select');
     const sdSel = document.getElementById('map-sido-select');
     
     if (cSel) {
       cSel.value = "대한민국";
-      cSel.dispatchEvent(new Event('change')); // 국가 변경 이벤트 태워 시도 목록 정상 빌드
+      cSel.dispatchEvent(new Event('change')); 
     }
     
     if (sdSel) {
       sdSel.value = "서울특별시";
-      sdSel.dispatchEvent(new Event('change')); // 시도 변경 이벤트 태워 시군구 목록 연동
+      sdSel.dispatchEvent(new Event('change')); 
     }
 
     map.jumpTo({ center: [126.9780, 37.5665], zoom: 11 });
@@ -937,27 +928,84 @@
       });
 
       rawGeojsonData.features.sort((a, b) => a._timestamp - b._timestamp);
+      
+      // ====== 📍 완벽 복구된 Turf.js 공간 연산 로직 시작 ======
       rawGeojsonData.features.forEach((f, index) => {
         f.id = index;
         f._globalId = index + 1;
         f._youtubeId = extractYouTubeIdFromFeature(f);
         
         const p = f.properties || {};
-        const c = getCorrectedCountry(f);
-        p.country = c;
+        f.properties = p;
+        
+        let c = getCorrectedCountry(f); 
+        let sidos = new Set();
+        let sigs = new Set();
 
-        const sidos = (p.sido || "").split(',').map(s => s.trim()).filter(Boolean);
-        const sigs = (p.sigungu || "").split(',').map(s => s.trim()).filter(Boolean);
+        try {
+          if (f.geometry && f.geometry.coordinates && f.geometry.coordinates.length > 0) {
+            // 경로의 첫 번째 점(Start Point) 기준으로 소속 행정구역 추출
+            const startPt = turf.point(f.geometry.coordinates[0]);
+
+            // 1. 해외 국가 판별
+            if (worldGeo && worldGeo.features) {
+              for (const wf of worldGeo.features) {
+                if (turf.booleanPointInPolygon(startPt, wf)) {
+                  let wName = wf.properties.NAME || wf.properties.ADMIN;
+                  if (wName === 'South Korea') { c = '대한민국'; break; }
+                  else if (wName === 'Japan') { c = '일본'; break; }
+                  else if (wName === 'Taiwan') { c = '대만'; break; }
+                  else if (wName === 'Singapore') { c = '싱가포르'; break; }
+                  else if (wName === 'Vietnam') { c = '베트남'; break; }
+                  else if (wName === 'Canada') { c = '캐나다'; break; }
+                  else if (wName === 'Russia') { c = '러시아'; break; }
+                  else if (wName === 'United States of America' || wName === 'United States') { c = '미국'; break; }
+                  else if (wName === 'South Africa') { c = '남아프리카공화국'; break; }
+                  else if (wName && wName !== 'South Korea') { c = wName; break; }
+                }
+              }
+            }
+            p.country = c;
+
+            // 2. 대한민국 시도, 시군구 판별
+            if (c === "대한민국") {
+              if (sidoGeo && sidoGeo.features) {
+                for (const sidoF of sidoGeo.features) {
+                  if (turf.booleanPointInPolygon(startPt, sidoF)) {
+                    sidos.add(sidoF.properties.CTP_KOR_NM);
+                  }
+                }
+              }
+              if (sigunguGeo && sigunguGeo.features) {
+                for (const sigF of sigunguGeo.features) {
+                  if (turf.booleanPointInPolygon(startPt, sigF)) {
+                    sigs.add(sigF.properties.SIG_KOR_NM);
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.error("공간 연산 처리 중 에러 발생:", e);
+        }
+
+        // 연산된 값을 프로퍼티에 할당하여 사이트 드롭다운 로직에 태움
+        p.sido = sidos.size > 0 ? Array.from(sidos).join(', ') : (p.sido || "");
+        p.sigungu = sigs.size > 0 ? Array.from(sigs).join(', ') : (p.sigungu || "");
+        // ====== 📍 Turf.js 공간 연산 로직 끝 ======
 
         const yr = extractYear(f);
         if (yr) availableYears.add(yr);
 
         if (!adminHierarchy[c]) adminHierarchy[c] = {};
         if (c === "대한민국") {
-          sidos.forEach(sd => {
+          const sdArr = p.sido.split(',').map(s => s.trim()).filter(Boolean);
+          const sigArr = p.sigungu.split(',').map(s => s.trim()).filter(Boolean);
+          
+          sdArr.forEach(sd => {
             if (sd !== "-" && sd !== "") {
               if (!adminHierarchy[c][sd]) adminHierarchy[c][sd] = new Set();
-              sigs.forEach(sg => {
+              sigArr.forEach(sg => {
                 if (sg !== "-" && sg !== "") {
                   if (sd === "서울특별시") {
                     if (SEOUL_DISTRICTS.has(sg)) adminHierarchy[c][sd].add(sg);
@@ -996,7 +1044,6 @@
       buildFilterDropdowns('map');
       buildFilterDropdowns('list');
 
-      // 드롭다운 세팅 및 데이터 빌드가 모두 끝난 후 초기화 함수 실행
       resetMapToInitial();
       openRouteFromUrl();
     });
