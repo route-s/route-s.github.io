@@ -496,7 +496,6 @@
   let currentMode = 'map';
   let sortAscending = true;
 
-  // [수정 포인트] 유튜브 IFrame API를 하드코딩하지 않고, 스크립트가 로딩될 때 안전하게 동적으로 불러옵니다.
   const ytScript = document.createElement('script');
   ytScript.src = "https://www.youtube.com/iframe_api";
   document.head.appendChild(ytScript);
@@ -514,19 +513,24 @@
     "러시아": "Russia", "중국": "China", "말레이시아": "Malaysia", "마카오": "Macau"
   };
 
+  // 구 명칭 및 신 명칭 통합 호환 매핑
   const SIDO_SHORT_MAP = {
     "서울특별시": "서울", "부산광역시": "부산", "대구광역시": "대구", "인천광역시": "인천",
     "광주광역시": "광주", "대전광역시": "대전", "울산광역시": "울산", "세종특별자치시": "세종",
-    "경기도": "경기", "강원특별자치도": "강원", "충청북도": "충북", "충청남도": "충남",
-    "전북특별자치도": "전북", "전라남도": "전남", "경상북도": "경북", "경상남도": "경남",
-    "제주특별자치도": "제주"
+    "경기도": "경기", "강원도": "강원", "강원특별자치도": "강원",
+    "충청북도": "충북", "충청남도": "충남",
+    "전라북도": "전북", "전북특별자치도": "전북",
+    "전라남도": "전남", "경상북도": "경북", "경상남도": "경남",
+    "제주특별자치도": "제주", "제주도": "제주"
   };
 
   const SIDO_EN_MAP = {
     "서울특별시": "Seoul", "부산광역시": "Busan", "대구광역시": "Daegu", "인천광역시": "Incheon",
     "광주광역시": "Gwangju", "대전광역시": "Daejeon", "울산광역시": "Ulsan", "세종특별자치시": "Sejong",
-    "경기도": "Gyeonggi", "강원특별자치도": "Gangwon", "충청북도": "Chungbuk", "충청남도": "Chungnam",
-    "전북특별자치도": "Jeonbuk", "전라남도": "Jeonnam", "경상북도": "Gyeongbuk", "경상남도": "Gyeongnam",
+    "경기도": "Gyeonggi", "강원도": "Gangwon", "강원특별자치도": "Gangwon",
+    "충청북도": "Chungbuk", "충청남도": "Chungnam",
+    "전라북도": "Jeonbuk", "전북특별자치도": "Jeonbuk",
+    "전라남도": "Jeonnam", "경상북도": "Gyeongbuk", "경상남도": "Gyeongnam",
     "제주특별자치도": "Jeju"
   };
 
@@ -546,8 +550,18 @@
     "관악구": "Gwanak-gu", "서초구": "Seocho-gu", "강남구": "Gangnam-gu", "송파구": "Songpa-gu",
     "강동구": "Gangdong-gu", "고양시덕양구": "Goyang Deogyang", "고양시일산동구": "Ilsandong-gu",
     "고양시일산서구": "Ilsanseo-gu", "성남시분당구": "Bundang-gu", "수원시팔달구": "Paldal-gu",
-    "광명시": "Gwangmyeong-si", "제주시": "Jeju-si", "서귀포시": "Seogwipo-si"
+    "광명시": "Gwangmyeong-si", "제주시": "Jeju-si", "서귀포시": "Seogwipo-si",
+    "익산시": "Iksan-si", "정읍시": "Jeongeup-si", "남원시": "Namwon-si", "전주시": "Jeonju-si", "군산시": "Gunsan-si"
   };
+
+  function normalizeSido(name) {
+    if (!name) return "";
+    let s = name.trim();
+    if (s === "전라북도") return "전북특별자치도";
+    if (s === "강원도") return "강원특별자치도";
+    if (s === "제주도") return "제주특별자치도";
+    return s;
+  }
 
   function getCorrectedCountry(feature) {
     const props = feature.properties || {};
@@ -612,7 +626,7 @@
     const country = props.country || "대한민국";
     if (country !== "대한민국") return `[${COUNTRY_EN_MAP[country] || country}]`;
 
-    const sidos = (props.sido || "").split(',').map(s => s.trim()).filter(Boolean);
+    const sidos = (props.sido || "").split(',').map(s => normalizeSido(s)).filter(Boolean);
     const sigs = (props.sigungu || "").split(',').map(s => s.trim()).filter(Boolean);
 
     if (sigs.length === 0) {
@@ -942,9 +956,15 @@
 
         try {
           if (f.geometry && f.geometry.coordinates && f.geometry.coordinates.length > 0) {
-            const startPt = turf.point(f.geometry.coordinates[0]);
-            const lon = startPt.geometry.coordinates[0][0] || startPt.geometry.coordinates[0];
-            const lat = startPt.geometry.coordinates[0][1] || startPt.geometry.coordinates[1];
+            // LineString / MultiLineString 시작 좌표 안전 추출
+            let coords = f.geometry.coordinates;
+            while (Array.isArray(coords[0]) && typeof coords[0][0] !== 'number') {
+              coords = coords[0];
+            }
+            const startCoord = coords[0];
+            const startPt = turf.point(startCoord);
+            const lon = startCoord[0];
+            const lat = startCoord[1];
             
             if (!c) {
                 let isKorea = (lon >= 124.0 && lon <= 132.0 && lat >= 33.0 && lat <= 39.0);
@@ -979,7 +999,8 @@
               if (sidoGeo && sidoGeo.features) {
                 for (const sidoF of sidoGeo.features) {
                   if (turf.booleanPointInPolygon(startPt, sidoF)) {
-                    sidos.add(sidoF.properties.name || sidoF.properties.CTP_KOR_NM);
+                    let rawSido = sidoF.properties.name || sidoF.properties.CTP_KOR_NM;
+                    sidos.add(normalizeSido(rawSido));
                     break; 
                   }
                 }
@@ -998,7 +1019,12 @@
           console.error(e);
         }
 
-        p.sido = sidos.size > 0 ? Array.from(sidos).join(', ') : (p.sido || "");
+        // 기존 수동 지정된 sido 값이 있더라도 정규화 적용
+        if (p.sido && sidos.size === 0) {
+          p.sido.split(',').forEach(s => sidos.add(normalizeSido(s)));
+        }
+
+        p.sido = sidos.size > 0 ? Array.from(sidos).join(', ') : (normalizeSido(p.sido) || "");
         p.sigungu = sigs.size > 0 ? Array.from(sigs).join(', ') : (p.sigungu || "");
 
         const yr = extractYear(f);
@@ -1006,7 +1032,7 @@
 
         if (!adminHierarchy[c]) adminHierarchy[c] = {};
         if (c === "대한민국") {
-          const sdArr = p.sido.split(',').map(s => s.trim()).filter(Boolean);
+          const sdArr = p.sido.split(',').map(s => normalizeSido(s)).filter(Boolean);
           const sigArr = p.sigungu.split(',').map(s => s.trim()).filter(Boolean);
           
           sdArr.forEach(sd => {
@@ -1238,7 +1264,7 @@
       const p = f.properties || {};
       if (c !== 'ALL' && p.country !== c) return false;
       if (c === '대한민국' && sd !== 'ALL') {
-        const sidos = (p.sido || "").split(',').map(s => s.trim());
+        const sidos = (p.sido || "").split(',').map(s => normalizeSido(s));
         if (!sidos.includes(sd)) return false;
       }
       if (c === '대한민국' && sd !== 'ALL' && sgg !== 'ALL') {
@@ -1255,26 +1281,6 @@
     
     map.setFilter('routes-line', filterExpression);
     map.setFilter('routes-hitbox', filterExpression);
-
-    if (map.getLayer('boundary-sigungu-line') && map.getLayer('boundary-sigungu-fill')) {
-      if (sd === 'ALL') {
-        map.setLayoutProperty('boundary-sido-line', 'visibility', 'visible');
-        map.setLayoutProperty('boundary-sigungu-line', 'visibility', 'none');
-        map.setLayoutProperty('boundary-sigungu-fill', 'visibility', 'none');
-      } else {
-        map.setLayoutProperty('boundary-sido-line', 'visibility', 'none');
-        map.setLayoutProperty('boundary-sigungu-line', 'visibility', 'visible');
-        map.setLayoutProperty('boundary-sigungu-fill', 'visibility', 'visible');
-
-        if (sgg === 'ALL') {
-          map.setFilter('boundary-sigungu-line', ['==', ['get', '_sido'], sd]);
-          map.setFilter('boundary-sigungu-fill', ['==', ['get', '_sido'], sd]);
-        } else {
-          map.setFilter('boundary-sigungu-line', ['all', ['==', ['get', '_sido'], sd], ['==', ['get', 'name'], sgg]]);
-          map.setFilter('boundary-sigungu-fill', ['all', ['==', ['get', '_sido'], sd], ['==', ['get', 'name'], sgg]]);
-        }
-      }
-    }
 
     if (filtered.length > 0) {
       try {
@@ -1296,7 +1302,7 @@
       const p = f.properties || {};
       if (c !== 'ALL' && p.country !== c) return false;
       if (c === '대한민국' && sd !== 'ALL') {
-        const sidos = (p.sido || "").split(',').map(s => s.trim());
+        const sidos = (p.sido || "").split(',').map(s => normalizeSido(s));
         if (!sidos.includes(sd)) return false;
       }
       if (c === '대한민국' && sd !== 'ALL' && sgg !== 'ALL') {
