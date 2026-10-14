@@ -47,13 +47,13 @@
       background-color: #1a1a1a;
     }
 
-    /* 상태바 중앙 정렬 및 1줄 고정 */
+    /* 통합 상단 필터바 (DOM 슬림화 적용) */
     .filter-container {
       position: absolute;
       top: 15px;
       left: 50%;
       transform: translateX(-50%);
-      z-index: 100;
+      z-index: 105;
       background: rgba(18, 20, 26, 0.95);
       padding: 6px 10px;
       border-radius: 10px;
@@ -103,7 +103,7 @@
       padding: 5px 8px;
       font-size: 11.5px;
       outline: none;
-      width: 130px;
+      width: 140px;
       flex-shrink: 1;
     }
     .search-input::placeholder { color: #888; }
@@ -173,21 +173,21 @@
       display: none;
       position: absolute;
       top: 100%;
-      left: 0;
+      right: 0;
       margin-top: 4px;
       background: #1e222d;
       border: 1px solid rgba(255,255,255,0.2);
       border-radius: 8px;
       box-shadow: 0 6px 20px rgba(0,0,0,0.7);
       padding: 8px 10px;
-      z-index: 102;
-      min-width: 120px;
-      max-height: 200px;
+      z-index: 120;
+      min-width: 135px;
+      max-height: 240px;
       overflow-y: auto;
       white-space: nowrap;
     }
     .dropdown-content.show { display: block; }
-    .year-checkbox-label {
+    .checkbox-label {
       display: flex;
       align-items: center;
       gap: 6px;
@@ -196,27 +196,27 @@
       padding: 3px 0;
       cursor: pointer;
     }
-    .year-checkbox-label:hover { color: #00ffff; }
-    .year-checkbox-label input { accent-color: #00ffff; cursor: pointer; }
+    .checkbox-label:hover { color: #00ffff; }
+    .checkbox-label input { accent-color: #00ffff; cursor: pointer; }
 
-    /* 지도 모드 우측 상단 플레이어 패널 */
+    /* 플레이어 패널 */
     #player-panel {
       position: absolute;
       top: 65px;
       right: 15px;
-      width: 380px;
+      width: 390px;
       max-width: calc(100vw - 30px);
       height: auto;
-      background: rgba(18, 20, 26, 0.95);
+      background: rgba(18, 20, 26, 0.96);
       color: #fff;
       border-radius: 12px;
-      box-shadow: 0 8px 30px rgba(0,0,0,0.8);
+      box-shadow: 0 8px 30px rgba(0,0,0,0.85);
       display: none;
       flex-direction: column;
       overflow: hidden;
       z-index: 100;
       backdrop-filter: blur(10px);
-      border: 1px solid rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.14);
     }
     #player-container {
       width: 100%;
@@ -226,10 +226,76 @@
       flex-shrink: 0;
     }
     #player-container iframe { width: 100%; height: 100%; border: none; display: block; }
-    #info-box { padding: 10px 14px; background: rgba(22, 25, 34, 0.98); }
-    #video-title { font-size: 14px; font-weight: bold; color: #00ffff; line-height: 1.3; width: 100%; }
+    #info-box { padding: 10px 12px; background: rgba(22, 25, 34, 0.98); display: flex; flex-direction: column; gap: 7px; }
+    #video-title { font-size: 13.5px; font-weight: bold; color: #00ffff; line-height: 1.35; width: 100%; }
 
-    /* 리스트 모드일 때 플레이어 패널을 화면 상단에 고정 배치 */
+    /* 플레이어 툴바 (진행률, 방향반전, 클릭이동, 링크복사) */
+    #player-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+      flex-wrap: wrap;
+      padding-top: 4px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+    }
+    .tool-chip {
+      background: #252836;
+      color: #ccc;
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 5px;
+      padding: 3px 7px;
+      font-size: 10.5px;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .tool-chip:hover { background: #32364a; color: #fff; border-color: #00ffff; }
+    .tool-chip.active { background: rgba(0, 255, 255, 0.18); color: #00ffff; border-color: #00ffff; font-weight: bold; }
+    #sync-status { font-size: 10.5px; color: #ffe600; font-family: monospace; }
+
+    /* 인접 코스 이어보기 추천 박스 */
+    #nearby-box {
+      border-top: 1px solid rgba(255,255,255,0.08);
+      padding-top: 6px;
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .nearby-header {
+      font-size: 10.5px;
+      color: #aaa;
+      font-weight: 600;
+    }
+    .nearby-list {
+      display: flex;
+      gap: 5px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+    .nearby-list::-webkit-scrollbar { height: 3px; }
+    .nearby-list::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+    .nearby-chip {
+      background: rgba(0, 206, 209, 0.12);
+      border: 1px solid rgba(0, 255, 255, 0.3);
+      color: #e0ffff;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: all 0.15s;
+    }
+    .nearby-chip:hover {
+      background: #00ffff;
+      color: #000;
+      font-weight: bold;
+    }
+
+    /* 리스트 모드일 때 레이아웃 */
     body.list-mode #player-panel {
       position: relative;
       top: 65px;
@@ -237,51 +303,35 @@
       right: 0;
       width: 100%;
       max-width: none;
-      height: 45vh;
+      height: 44vh;
       border-radius: 0;
       border: none;
       border-bottom: 2px solid #00ffff;
       box-shadow: 0 4px 20px rgba(0,0,0,0.9);
       display: flex !important;
     }
-    body.list-mode #player-container {
-      flex: 1;
-      height: auto;
-      min-height: 0;
-    }
-    body.list-mode #info-box {
-      flex: 0 0 42px;
-      padding: 8px 15px;
-      border-top: 1px solid rgba(255,255,255,0.1);
-    }
-    body.list-mode #video-title {
-      font-size: 13.5px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    body.list-mode #split-btn { display: none; }
-    body.list-mode #close-btn { display: none; }
+    body.list-mode #player-container { flex: 1; height: auto; min-height: 0; }
+    body.list-mode #info-box { flex: 0 0 auto; padding: 8px 15px; }
+    body.list-mode #video-title { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    body.list-mode #split-btn, body.list-mode #close-btn { display: none; }
 
-    /* 리스트 모드 레이아웃 */
     #list-view-container {
       width: 100%;
       height: 100%;
       background: #14161c;
       display: flex;
       flex-direction: column;
-      padding-top: calc(45vh + 65px);
+      padding-top: calc(44vh + 65px);
     }
-    
     #list-controls-bar {
       max-width: 900px;
       width: calc(100% - 30px);
       margin: 12px auto 5px auto;
       display: flex;
-      gap: 10px;
+      gap: 8px;
       align-items: center;
+      flex-wrap: wrap;
     }
-
     #list-scroll-area {
       flex: 1;
       overflow-y: auto;
@@ -311,28 +361,14 @@
       border-color: #ffe600;
       background: rgba(255, 230, 0, 0.1);
     }
-    .route-number {
-      font-size: 14px;
-      font-weight: bold;
-      color: #888;
-      min-width: 35px;
-    }
-    .route-details {
-      flex: 1;
-    }
-    .route-item-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: #fff;
-      margin-bottom: 4px;
-    }
-    .route-item-meta {
-      font-size: 11.5px;
-      color: #00ffff;
-    }
+    .route-number { font-size: 14px; font-weight: bold; color: #888; min-width: 38px; }
+    .route-details { flex: 1; }
+    .route-item-title { font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 4px; }
+    .route-item-meta { font-size: 11.5px; color: #00ffff; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .theme-badge { background: rgba(255,255,255,0.1); color: #ddd; padding: 1px 6px; border-radius: 4px; font-size: 10.5px; }
 
     .panel-btn {
-      position: absolute; top: 8px; background: rgba(0,0,0,0.6);
+      position: absolute; top: 8px; background: rgba(0,0,0,0.65);
       color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px;
       width: 28px; height: 28px; cursor: pointer; font-size: 14px;
       display: flex; align-items: center; justify-content: center; z-index: 101;
@@ -342,44 +378,54 @@
     #close-btn { right: 8px; font-size: 16px; }
     #split-btn { right: 42px; font-size: 13px; }
 
-    /* 모바일 및 작은 화면 반응형 최적화 */
+    /* 중복 경로 선택 팝업 스타일 */
+    .maplibregl-popup-content {
+      background: rgba(18, 20, 28, 0.96) !important;
+      color: #fff !important;
+      border-radius: 10px !important;
+      padding: 10px 12px !important;
+      font-size: 12px !important;
+      box-shadow: 0 8px 25px rgba(0,0,0,0.8) !important;
+      border: 1px solid rgba(0, 255, 255, 0.35) !important;
+      max-width: 300px !important;
+    }
+    .maplibregl-popup-close-button { color: #aaa !important; font-size: 16px !important; right: 6px !important; top: 4px !important; }
+    .overlap-popup-title { font-size: 11.5px; font-weight: bold; color: #ffe600; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.15); }
+    .overlap-list { max-height: 190px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+    .overlap-item {
+      padding: 6px 8px; border-radius: 6px; background: rgba(255,255,255,0.06);
+      cursor: pointer; transition: all 0.15s; font-size: 11.5px; line-height: 1.3;
+    }
+    .overlap-item:hover { background: #00ffff; color: #000; font-weight: bold; }
+
+    /* 지도 위 시점/종점/현재위치 커스텀 마커 */
+    .route-marker {
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: bold; color: #fff;
+      border-radius: 50%; box-shadow: 0 2px 6px rgba(0,0,0,0.7);
+      pointer-events: none;
+    }
+    .marker-start { width: 20px; height: 20px; background: #00c853; border: 2px solid #fff; }
+    .marker-end { width: 20px; height: 20px; background: #ff1744; border: 2px solid #fff; }
+    .marker-walker {
+      width: 16px; height: 16px; background: #ff9100; border: 2.5px solid #fff;
+      box-shadow: 0 0 12px #ff9100; transition: transform 0.1s linear;
+    }
+
     @media (max-width: 768px) {
       .filter-container {
-        top: 8px;
-        left: 10px;
-        transform: none;
-        width: calc(100vw - 20px);
-        max-width: 100%;
-        padding: 4px 6px;
-        gap: 3px;
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
+        top: 8px; left: 10px; transform: none;
+        width: calc(100vw - 20px); max-width: 100%;
+        padding: 4px 6px; gap: 3px;
+        overflow-x: auto; -webkit-overflow-scrolling: touch;
       }
-      .filter-container::-webkit-scrollbar {
-        display: none;
-      }
+      .filter-container::-webkit-scrollbar { display: none; }
       #logo-icon { height: 18px; }
-      .filter-select, .dropdown-btn, .action-btn, .search-input {
-        padding: 4px 5px;
-        font-size: 10.5px;
-      }
-      .search-input { width: 95px; }
-      #player-panel {
-        top: 55px;
-        left: 10px;
-        right: 10px;
-        width: calc(100% - 20px);
-        max-width: 100%;
-      }
-      body.list-mode #player-panel {
-        top: 55px;
-        left: 0;
-        right: 0;
-        width: 100%;
-        max-width: 100%;
-        height: 32vh;
-      }
-      #list-view-container { padding-top: calc(32vh + 55px); }
+      .filter-select, .dropdown-btn, .action-btn, .search-input { padding: 4px 5px; font-size: 10.5px; }
+      .search-input { width: 105px; }
+      #player-panel { top: 52px; left: 10px; right: 10px; width: calc(100% - 20px); max-width: 100%; }
+      body.list-mode #player-panel { top: 52px; left: 0; right: 0; width: 100%; max-width: 100%; height: 34vh; }
+      #list-view-container { padding-top: calc(34vh + 52px); }
       #list-controls-bar { width: calc(100% - 20px); margin: 8px auto 4px auto; }
     }
 
@@ -389,49 +435,15 @@
       height: 50vh; border-radius: 0; border: none; border-bottom: 2px solid #00ffff;
       box-shadow: 0 4px 20px rgba(0,0,0,0.9); display: flex;
     }
-    body.split-mode #player-container { flex: 1; height: calc(100% - 50px); }
+    body.split-mode #player-container { flex: 1; height: auto; min-height: 0; }
     body.split-mode #map-wrapper { flex: none; height: 50vh; width: 100%; }
-
-    .maplibregl-popup-content {
-      background: rgba(15, 17, 21, 0.95);
-      color: #fff;
-      border-radius: 8px;
-      padding: 8px 12px;
-      font-size: 12px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.6);
-      border: 1px solid rgba(255,255,255,0.15);
-    }
   </style>
 </head>
 <body class="map-mode">
 
 <div id="app-container">
-  <div id="player-panel">
-    <button id="split-btn" class="panel-btn" onclick="toggleSplitMode()" title="화면 상하 분할 / 팝업 토글">◫</button>
-    <button id="close-btn" class="panel-btn" onclick="closePlayer()" title="닫기">×</button>
-    <div id="player-container"><div id="yt-player"></div></div>
-    <div id="info-box">
-      <div id="video-title">코스 명칭</div>
-    </div>
-  </div>
-
-  <div id="map-pane" class="view-pane active">
-    <div id="map-wrapper">
-      <div id="map"></div>
-    </div>
-  </div>
-
-  <div id="list-pane" class="view-pane">
-    <div id="list-view-container">
-      <div id="list-controls-bar">
-        <input type="text" id="search-input" class="search-input" placeholder="제목 또는 번호 검색" oninput="renderRouteList()" onkeydown="if(event.key==='Enter') { this.blur(); renderRouteList(); }">
-        <button id="sort-order-btn" class="action-btn" onclick="toggleSortOrder()" title="정렬 순서 변경">🔄 과거순</button>
-      </div>
-      <div id="list-scroll-area"></div>
-    </div>
-  </div>
-
-  <div id="map-filter-container" class="filter-container">
+  <!-- 통합 상단 필터바 (단일 DOM) -->
+  <div id="main-filter-container" class="filter-container">
     <img id="logo-icon" src="./logo.png" alt="ROUTE S" title="ROUTE S 채널 바로가기" onclick="window.open('https://www.youtube.com/@루트에스', '_blank')">
 
     <div class="mode-switch">
@@ -439,43 +451,67 @@
       <button id="btn-list-mode" class="mode-btn" onclick="switchMode('list')">📜 LIST</button>
     </div>
 
-    <select id="map-country-select" class="filter-select">
+    <select id="country-select" class="filter-select">
       <option value="ALL">1: 국가 전체 (All)</option>
     </select>
-    <select id="map-sido-select" class="filter-select" disabled>
+    <select id="sido-select" class="filter-select" disabled>
       <option value="ALL">2: 시·도 (State)</option>
     </select>
-    <select id="map-sigungu-select" class="filter-select" disabled>
+    <select id="sigungu-select" class="filter-select" disabled>
       <option value="ALL">3: 시·군·구 (City/Dist.)</option>
     </select>
 
-    <div class="dropdown-multiselect" id="map-year-dropdown-container">
-      <button class="dropdown-btn" type="button" onclick="toggleMapYearDropdown()">📅 연도별 ▼</button>
-      <div class="dropdown-content" id="map-year-checkboxes"></div>
+    <!-- 연도별 멀티 드롭다운 -->
+    <div class="dropdown-multiselect" id="year-dropdown-container">
+      <button class="dropdown-btn" type="button" onclick="toggleDropdown('year-checkboxes')">📅 연도별 ▼</button>
+      <div class="dropdown-content" id="year-checkboxes"></div>
+    </div>
+
+    <!-- 테마/분위기 멀티 드롭다운 -->
+    <div class="dropdown-multiselect" id="theme-dropdown-container">
+      <button class="dropdown-btn" type="button" onclick="toggleDropdown('theme-checkboxes')">🎨 테마별 ▼</button>
+      <div class="dropdown-content" id="theme-checkboxes"></div>
     </div>
   </div>
 
-  <div id="list-filter-container" class="filter-container" style="display:none;">
-    <img id="logo-icon" src="./logo.png" alt="ROUTE S" title="ROUTE S 채널 바로가기" onclick="window.open('https://www.youtube.com/@루트에스', '_blank')">
-
-    <div class="mode-switch">
-      <button class="mode-btn" onclick="switchMode('map')">🗺️ MAP</button>
-      <button class="mode-btn active" onclick="switchMode('list')">📜 LIST</button>
+  <!-- 플레이어 & 컨트롤 & 인접코스 추천 패널 -->
+  <div id="player-panel">
+    <button id="split-btn" class="panel-btn" onclick="toggleSplitMode()" title="화면 상하 분할 / 팝업 토글">◫</button>
+    <button id="close-btn" class="panel-btn" onclick="closePlayer()" title="닫기">×</button>
+    <div id="player-container"><div id="yt-player"></div></div>
+    <div id="info-box">
+      <div id="video-title">코스 명칭</div>
+      <div id="player-toolbar">
+        <span id="sync-status">🟢 S ➔ 🏁 E 대기중</span>
+        <div style="display:flex; gap:4px;">
+          <button id="btn-reverse-dir" class="tool-chip" onclick="toggleRouteDirection()" title="시작점(S)과 도착점(E) 진행 방향을 반대로 뒤집습니다">🔄 방향반전</button>
+          <button id="btn-click-seek" class="tool-chip active" onclick="toggleClickSeek()" title="켜두면 지도 위 노선을 클릭할 때 영상이 해당 위치 시간으로 이동합니다">📍 클릭이동 ON</button>
+          <button class="tool-chip" onclick="copyCurrentRouteLink()" title="이 코스의 딥링크 URL 복사">🔗 링크복사</button>
+        </div>
+      </div>
+      <div id="nearby-box">
+        <div class="nearby-header">👣 이 코스 종점(🏁)에서 바로 이어지는 다음 산책길:</div>
+        <div class="nearby-list" id="nearby-list"></div>
+      </div>
     </div>
+  </div>
 
-    <select id="list-country-select" class="filter-select">
-      <option value="ALL">1: 국가 전체 (All)</option>
-    </select>
-    <select id="list-sido-select" class="filter-select" disabled>
-      <option value="ALL">2: 시·도 (State)</option>
-    </select>
-    <select id="list-sigungu-select" class="filter-select" disabled>
-      <option value="ALL">3: 시·군·구 (City/Dist.)</option>
-    </select>
+  <!-- 지도 뷰 -->
+  <div id="map-pane" class="view-pane active">
+    <div id="map-wrapper">
+      <div id="map"></div>
+    </div>
+  </div>
 
-    <div class="dropdown-multiselect" id="list-year-dropdown-container">
-      <button class="dropdown-btn" type="button" onclick="toggleListYearDropdown()">📅 연도별 ▼</button>
-      <div class="dropdown-content" id="list-year-checkboxes"></div>
+  <!-- 리스트 뷰 -->
+  <div id="list-pane" class="view-pane">
+    <div id="list-view-container">
+      <div id="list-controls-bar">
+        <input type="text" id="search-input" class="search-input" placeholder="제목·코드·번호 검색" oninput="renderRouteList()" onkeydown="if(event.key==='Enter') { this.blur(); renderRouteList(); }">
+        <button id="sort-order-btn" class="action-btn" onclick="toggleSortOrder()" title="정렬 순서 변경">🔄 과거순</button>
+        <span id="list-count-label" style="font-size:11.5px; color:#888; margin-left:auto;"></span>
+      </div>
+      <div id="list-scroll-area"></div>
     </div>
   </div>
 </div>
@@ -490,11 +526,33 @@
   let rawGeojsonData = null;
   let adminHierarchy = {};
   let availableYears = new Set();
-  let mapSelectedYears = new Set();
-  let listSelectedYears = new Set();
+  let selectedYears = new Set();
   let isSplitMode = false;
   let currentMode = 'map';
   let sortAscending = true;
+
+  // 시간-위치 동기화 관련 상태 변수
+  let isReversedDirection = false;
+  let isClickSeekEnabled = true;
+  let currentCleanedCoords = [];
+  let currentCleanLineTurf = null;
+  let currentLineLengthKm = 0;
+  let startMarker = null;
+  let endMarker = null;
+  let walkerMarker = null;
+  let syncTimer = null;
+  let activeOverlapPopup = null;
+
+  // 자동 분류 테마 정의
+  const THEME_DEFINITIONS = [
+    { key: 'day', label: '☀️ 주간 산책' },
+    { key: 'night', label: '🌙 야간/저녁' },
+    { key: 'rain_snow', label: '☔ 우천/설경' },
+    { key: 'alley', label: '🏘️ 골목/주택가' },
+    { key: 'urban', label: '🏙️ 도심/번화가' },
+    { key: 'park_campus', label: '🌳 공원/캠퍼스' }
+  ];
+  let selectedThemes = new Set(THEME_DEFINITIONS.map(t => t.key));
 
   const ytScript = document.createElement('script');
   ytScript.src = "https://www.youtube.com/iframe_api";
@@ -513,7 +571,6 @@
     "러시아": "Russia", "중국": "China", "말레이시아": "Malaysia", "마카오": "Macau"
   };
 
-  // 구 명칭 및 신 명칭 통합 호환 매핑
   const SIDO_SHORT_MAP = {
     "서울특별시": "서울", "부산광역시": "부산", "대구광역시": "대구", "인천광역시": "인천",
     "광주광역시": "광주", "대전광역시": "대전", "울산광역시": "울산", "세종특별자치시": "세종",
@@ -563,17 +620,108 @@
     return s;
   }
 
-  function getCorrectedCountry(feature) {
+  function getFeatureFullText(feature) {
     const props = feature.properties || {};
-    const text = (props.name || "") + " " + (props.Name || "") + " " + (props.description || "") + " " + (props.Description || "");
-    const lowerText = text.toLowerCase();
+    let descText = "";
+    if (typeof props.description === 'object' && props.description !== null) {
+      descText = props.description.value || "";
+    } else if (typeof props.description === 'string') {
+      descText = props.description;
+    }
+    return `${props.name || ""} ${props.Name || ""} ${descText} ${props.Description || ""}`;
+  }
 
+  // 텍스트 및 기존 속성 기반 테마 자동 추론 (1,800개 데이터 자동 분류)
+  function inferThemesFromFeature(feature) {
+    const props = feature.properties || {};
+    if (Array.isArray(props.themes) && props.themes.length > 0) {
+      return new Set(props.themes);
+    }
+
+    const text = getFeatureFullText(feature).toLowerCase();
+    const themes = new Set();
+
+    // 1. 야간/주간 판별
+    if (/야간|야경|밤|저녁|퇴근|night|evening|오후\s*(6|7|8|9|10|11)시|밤산책/.test(text)) {
+      themes.add('night');
+    } else {
+      themes.add('day');
+    }
+
+    // 2. 우천/설경 판별
+    if (/우천|비오는|비\s*온|봄비|장마|폭우|빗방울|눈|폭설|설경|소낙눈|rain|snow|wet/.test(text)) {
+      themes.add('rain_snow');
+    }
+
+    // 3. 공원/캠퍼스/숲길 판별
+    if (/공원|대학교|대학|캠퍼스|숲|산책로|제방길|하천|수목원|식물원|천\b|univ|park|campus|forest/.test(text)) {
+      themes.add('park_campus');
+    }
+
+    // 4. 골목/주택가/아파트 판별
+    if (/골목|주택|아파트|단지|빌라|마을|재개발|뉴타운|초등|중학교|고등|alley|village|apt|residential/.test(text)) {
+      themes.add('alley');
+    }
+
+    // 5. 도심/번화가/상권 판별
+    if (/명동|강남|홍대|성수|신촌|을지로|종로|이태원|압구정|가로수길|로데오|광화문|남대문|동대문|시장|백화점|오피스|역세권|번화가|메인스트리트|downtown|market|street/.test(text)) {
+      themes.add('urban');
+    }
+
+    // 아무 공간 속성도 안 걸렸을 경우 기본 골목/도심 보완
+    if (!themes.has('alley') && !themes.has('urban') && !themes.has('park_campus')) {
+      themes.add('urban');
+    }
+
+    return themes;
+  }
+
+  // KML 수정으로 인해 깨지거나 순간이동하는 좌표 배열을 매끄럽게 정제 (Line Healing)
+  function sanitizeRouteCoordinates(rawCoords, shouldReverse = false) {
+    if (!rawCoords || rawCoords.length === 0) return [];
+
+    // MultiLineString 등 중첩 배열 평탄화
+    let flat = [];
+    function flatten(arr) {
+      if (!Array.isArray(arr) || arr.length === 0) return;
+      if (typeof arr[0] === 'number') {
+        flat.push([arr[0], arr[1]]);
+      } else {
+        arr.forEach(flatten);
+      }
+    }
+    flatten(rawCoords);
+    if (flat.length < 2) return flat;
+
+    // 연속 중복점 제거 및 비정상 스파이크(갔다가 즉시 원래 자리로 튀는 점) 필터링
+    let cleaned = [flat[0]];
+    for (let i = 1; i < flat.length; i++) {
+      const prev = cleaned[cleaned.length - 1];
+      const curr = flat[i];
+      const distKm = turf.distance(turf.point(prev), turf.point(curr), { units: 'kilometers' });
+      if (distKm < 0.0015) continue; // 1.5m 이내 중복점 스킵
+
+      // 만약 이전 점과 250m 이상 갑자기 튀는데, 그 다음 점은 이전 점 근처라면 잘못 찍힌 점으로 간주하고 무시
+      if (distKm > 0.25 && i + 1 < flat.length) {
+        const next = flat[i + 1];
+        const prevToNextKm = turf.distance(turf.point(prev), turf.point(next), { units: 'kilometers' });
+        if (prevToNextKm < distKm * 0.5) continue;
+      }
+      cleaned.push(curr);
+    }
+
+    if (cleaned.length < 2) cleaned = [flat[0], flat[flat.length - 1]];
+    if (shouldReverse) cleaned.reverse();
+    return cleaned;
+  }
+
+  function getCorrectedCountry(feature) {
+    const lowerText = getFeatureFullText(feature).toLowerCase();
     if (lowerText.includes('vladivostok') || lowerText.includes('블라디보스톡')) return "러시아";
     if (lowerText.includes('singapore') || lowerText.includes('싱가포르') || lowerText.includes('싱가폴')) return "싱가포르";
     if (lowerText.includes('hong kong') || lowerText.includes('홍콩')) return "홍콩";
     if (lowerText.includes('macau') || lowerText.includes('마카오')) return "마카오";
-    
-    return null; 
+    return null;
   }
 
   function formatCountryLabel(val) {
@@ -599,13 +747,12 @@
   }
 
   function extractTimestamp(feature) {
-    const props = feature.properties || {};
-    const text = (props.name || "") + " " + (props.Name || "") + " " + (props.description || "") + " " + (props.Description || "");
+    const text = getFeatureFullText(feature);
     const yearMatch = text.match(/\b(20\d{2})\b/);
     const year = yearMatch ? parseInt(yearMatch[1], 10) : 2020;
-    const months = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12 };
+    const months = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, oct:10, nov:11, dec:12, feg:2 };
     let month = 1;
-    const mMatch = text.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i);
+    const mMatch = text.match(/(Jan|Feb|Feg|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i);
     if (mMatch) {
       month = months[mMatch[1].toLowerCase()] || 1;
     } else {
@@ -616,8 +763,7 @@
   }
 
   function extractYear(feature) {
-    const props = feature.properties || {};
-    const text = (props.name || "") + " " + (props.Name || "") + " " + (props.description || "") + " " + (props.Description || "");
+    const text = getFeatureFullText(feature);
     const match = text.match(/\b(20\d{2})\b/);
     return match ? match[1] : null;
   }
@@ -646,20 +792,16 @@
     return `[${pairs.join(', ')}]`;
   }
 
-  function toggleMapYearDropdown() {
-    document.getElementById('map-year-checkboxes').classList.toggle('show');
-  }
-
-  function toggleListYearDropdown() {
-    document.getElementById('list-year-checkboxes').classList.toggle('show');
+  function toggleDropdown(id) {
+    const target = document.getElementById(id);
+    const isShowing = target.classList.contains('show');
+    document.querySelectorAll('.dropdown-content').forEach(el => el.classList.remove('show'));
+    if (!isShowing) target.classList.add('show');
   }
 
   window.addEventListener('click', (e) => {
-    if (!document.getElementById('map-year-dropdown-container').contains(e.target)) {
-      document.getElementById('map-year-checkboxes').classList.remove('show');
-    }
-    if (!document.getElementById('list-year-dropdown-container').contains(e.target)) {
-      document.getElementById('list-year-checkboxes').classList.remove('show');
+    if (!e.target.closest('.dropdown-multiselect')) {
+      document.querySelectorAll('.dropdown-content').forEach(el => el.classList.remove('show'));
     }
   });
 
@@ -668,20 +810,17 @@
     document.body.classList.toggle('list-mode', mode === 'list');
     document.body.classList.toggle('map-mode', mode === 'map');
 
-    document.querySelectorAll('.mode-btn').forEach(b => {
-      b.classList.toggle('active', (mode === 'map' && b.innerText.includes('MAP')) || (mode === 'list' && b.innerText.includes('LIST')));
-    });
+    document.getElementById('btn-map-mode').classList.toggle('active', mode === 'map');
+    document.getElementById('btn-list-mode').classList.toggle('active', mode === 'list');
 
     document.getElementById('map-pane').classList.toggle('active', mode === 'map');
     document.getElementById('list-pane').classList.toggle('active', mode === 'list');
-    document.getElementById('map-filter-container').style.display = (mode === 'map') ? 'flex' : 'none';
-    document.getElementById('list-filter-container').style.display = (mode === 'list') ? 'flex' : 'none';
 
     if (mode === 'map') {
       map.resize();
-      resetMapToInitial();
+      applyUnifiedFilter(false);
     } else {
-      resetListToInitial();
+      renderRouteList();
     }
 
     setTimeout(() => {
@@ -694,38 +833,18 @@
   }
 
   function resetMapToInitial() {
-    const cSel = document.getElementById('map-country-select');
-    const sdSel = document.getElementById('map-sido-select');
-    
+    const cSel = document.getElementById('country-select');
+    const sdSel = document.getElementById('sido-select');
+
     if (cSel) {
       cSel.value = "대한민국";
-      cSel.dispatchEvent(new Event('change')); 
+      cSel.dispatchEvent(new Event('change'));
     }
-    
     if (sdSel) {
       sdSel.value = "서울특별시";
-      sdSel.dispatchEvent(new Event('change')); 
+      sdSel.dispatchEvent(new Event('change'));
     }
-
     map.jumpTo({ center: [126.9780, 37.5665], zoom: 11 });
-  }
-
-  function resetListToInitial() {
-    const cSel = document.getElementById('list-country-select');
-    const sdSel = document.getElementById('list-sido-select');
-    const sgSel = document.getElementById('list-sigungu-select');
-    const searchInput = document.getElementById('search-input');
-
-    if (cSel) cSel.value = "ALL";
-    if (sdSel) { sdSel.value = "ALL"; sdSel.disabled = true; }
-    if (sgSel) { sgSel.value = "ALL"; sgSel.disabled = true; }
-    if (searchInput) searchInput.value = "";
-    
-    availableYears.forEach(yr => listSelectedYears.add(yr));
-    sortAscending = true;
-    document.getElementById('sort-order-btn').innerText = "🔄 과거순";
-
-    renderRouteList();
   }
 
   function toggleSortOrder() {
@@ -759,6 +878,7 @@
           if (pc && typeof event.target.setSize === 'function') {
             event.target.setSize(pc.clientWidth, pc.clientHeight);
           }
+          startSyncLoop();
         }
       }
     });
@@ -771,6 +891,151 @@
       return;
     }
     player.loadVideoById(videoId);
+  }
+
+  // 유튜브 재생 시간 <-> 지도 위 워커 마커 실시간 동기화 루프
+  function startSyncLoop() {
+    if (syncTimer) clearInterval(syncTimer);
+    syncTimer = setInterval(() => {
+      if (!playerReady || !player || !activeLine || !currentCleanLineTurf || currentLineLengthKm <= 0) return;
+      if (typeof player.getCurrentTime !== 'function' || typeof player.getDuration !== 'function') return;
+
+      const duration = player.getDuration();
+      const current = player.getCurrentTime();
+      if (!duration || duration <= 0) return;
+
+      const ratio = Math.min(1, Math.max(0, current / duration));
+      const targetDistKm = currentLineLengthKm * ratio;
+
+      try {
+        const pt = turf.along(currentCleanLineTurf, targetDistKm, { units: 'kilometers' });
+        if (pt && pt.geometry && pt.geometry.coordinates) {
+          if (!walkerMarker) {
+            const el = document.createElement('div');
+            el.className = 'route-marker marker-walker';
+            walkerMarker = new maplibregl.Marker({ element: el }).setLngLat(pt.geometry.coordinates).addTo(map);
+          } else {
+            walkerMarker.setLngLat(pt.geometry.coordinates);
+          }
+          const pct = Math.round(ratio * 100);
+          const distM = Math.round(targetDistKm * 1000);
+          const totalM = Math.round(currentLineLengthKm * 1000);
+          document.getElementById('sync-status').innerText = `🏃 ${pct}% (${distM}m / ${totalM}m)`;
+        }
+      } catch (e) {}
+    }, 250);
+  }
+
+  // 시점(S), 종점(E), 현재위치 마커 생성 및 갱신
+  function setupRouteMarkers(feature) {
+    clearRouteMarkers();
+    if (!feature || !feature.geometry || !feature.geometry.coordinates) return;
+
+    const props = feature.properties || {};
+    const savedReverse = Boolean(props.reversed);
+    const effectiveReverse = isReversedDirection ? !savedReverse : savedReverse;
+
+    currentCleanedCoords = sanitizeRouteCoordinates(feature.geometry.coordinates, effectiveReverse);
+    if (currentCleanedCoords.length < 2) return;
+
+    currentCleanLineTurf = turf.lineString(currentCleanedCoords);
+    currentLineLengthKm = turf.length(currentCleanLineTurf, { units: 'kilometers' });
+
+    const startCoord = currentCleanedCoords[0];
+    const endCoord = currentCleanedCoords[currentCleanedCoords.length - 1];
+
+    const sEl = document.createElement('div');
+    sEl.className = 'route-marker marker-start';
+    sEl.innerText = 'S';
+    startMarker = new maplibregl.Marker({ element: sEl }).setLngLat(startCoord).addTo(map);
+
+    const eEl = document.createElement('div');
+    eEl.className = 'route-marker marker-end';
+    eEl.innerText = 'E';
+    endMarker = new maplibregl.Marker({ element: eEl }).setLngLat(endCoord).addTo(map);
+
+    const wEl = document.createElement('div');
+    wEl.className = 'route-marker marker-walker';
+    walkerMarker = new maplibregl.Marker({ element: wEl }).setLngLat(startCoord).addTo(map);
+
+    const totalM = Math.round(currentLineLengthKm * 1000);
+    document.getElementById('sync-status').innerText = `🟢S➔🏁E (총 ${totalM}m)`;
+
+    // 종점(E) 기준 인접 코스 추천 업데이트
+    updateNearbyRoutes(endCoord, feature.id);
+  }
+
+  function clearRouteMarkers() {
+    if (startMarker) { startMarker.remove(); startMarker = null; }
+    if (endMarker) { endMarker.remove(); endMarker = null; }
+    if (walkerMarker) { walkerMarker.remove(); walkerMarker = null; }
+    currentCleanedCoords = [];
+    currentCleanLineTurf = null;
+    currentLineLengthKm = 0;
+  }
+
+  function toggleRouteDirection() {
+    if (!activeLine) return;
+    isReversedDirection = !isReversedDirection;
+    document.getElementById('btn-reverse-dir').classList.toggle('active', isReversedDirection);
+    setupRouteMarkers(activeLine);
+  }
+
+  function toggleClickSeek() {
+    isClickSeekEnabled = !isClickSeekEnabled;
+    const btn = document.getElementById('btn-click-seek');
+    btn.classList.toggle('active', isClickSeekEnabled);
+    btn.innerText = isClickSeekEnabled ? '📍 클릭이동 ON' : '📍 클릭이동 OFF';
+  }
+
+  function copyCurrentRouteLink() {
+    if (!activeLine) return;
+    const code = (activeLine.properties && activeLine.properties.code) ? activeLine.properties.code : '';
+    const url = `${window.location.origin}${window.location.pathname}${code ? '?route=' + encodeURIComponent(code) : ''}`;
+    navigator.clipboard.writeText(url).then(() => {
+      const statusEl = document.getElementById('sync-status');
+      const prev = statusEl.innerText;
+      statusEl.innerText = '✅ 딥링크 복사 완료!';
+      setTimeout(() => { statusEl.innerText = prev; }, 1800);
+    });
+  }
+
+  // 종점 반경 600m 이내 인접 코스 자동 탐색 및 추천
+  function updateNearbyRoutes(endCoord, currentId) {
+    const box = document.getElementById('nearby-box');
+    const listEl = document.getElementById('nearby-list');
+    if (!rawGeojsonData || !endCoord) {
+      box.style.display = 'none';
+      return;
+    }
+
+    const endPt = turf.point(endCoord);
+    const candidates = [];
+
+    rawGeojsonData.features.forEach(f => {
+      if (f.id === currentId || !f._startCoord) return;
+      const distKm = turf.distance(endPt, turf.point(f._startCoord), { units: 'kilometers' });
+      if (distKm <= 0.65) { // 650m 이내
+        candidates.push({ feature: f, distM: Math.round(distKm * 1000) });
+      }
+    });
+
+    candidates.sort((a, b) => a.distM - b.distM);
+    const topMatches = candidates.slice(0, 5);
+
+    if (topMatches.length === 0) {
+      box.style.display = 'none';
+      return;
+    }
+
+    listEl.innerHTML = topMatches.map(item => {
+      const p = item.feature.properties || {};
+      const name = p.name || p.Name || '코스';
+      return `<div class="nearby-chip" onclick="playRouteById(${item.feature.id})" title="${name} (${item.distM}m 거리)">
+        #${item.feature._globalId} ${name.split(' ')[0]} <span style="color:#ffe600;">(${item.distM}m)</span>
+      </div>`;
+    }).join('');
+    box.style.display = 'flex';
   }
 
   const map = new maplibregl.Map({
@@ -802,7 +1067,6 @@
 
   function extractYouTubeId(value) {
     if (value === null || value === undefined) return null;
-
     if (typeof value === 'object') {
       const preferredKeys = ['value', 'url', 'href', 'src', 'html', 'text'];
       for (const key of preferredKeys) {
@@ -811,7 +1075,6 @@
           if (id) return id;
         }
       }
-
       for (const nestedValue of Object.values(value)) {
         if (typeof nestedValue === 'string' || typeof nestedValue === 'object') {
           const id = extractYouTubeId(nestedValue);
@@ -821,77 +1084,32 @@
       return null;
     }
 
-    const text = String(value)
-      .trim()
-      .replace(/\\\//g, '/')
-      .replace(/&amp;/gi, '&');
-
+    const text = String(value).trim().replace(/\\\//g, '/').replace(/&amp;/gi, '&');
     if (!text) return null;
-
     if (/^[A-Za-z0-9_-]{11}$/.test(text)) return text;
 
     const patterns = [
       /(?:youtube(?:-nocookie)?\.com\/(?:watch\?(?:[^#]*?&)?v=|embed\/|v\/|shorts\/|live\/))([A-Za-z0-9_-]{11})/i,
       /(?:youtu\.be\/)([A-Za-z0-9_-]{11})/i
     ];
-
     for (const pattern of patterns) {
       const match = text.match(pattern);
       if (match) return match[1];
     }
-
-    try {
-      const parsed = new URL(text);
-      const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
-
-      if (host === 'youtu.be') {
-        const id = parsed.pathname.split('/').filter(Boolean)[0];
-        if (id && /^[A-Za-z0-9_-]{11}$/.test(id)) return id;
-      }
-
-      if (host === 'youtube.com' || host === 'youtube-nocookie.com') {
-        const v = parsed.searchParams.get('v');
-        if (v && /^[A-Za-z0-9_-]{11}$/.test(v)) return v;
-
-        const parts = parsed.pathname.split('/').filter(Boolean);
-        if (['embed', 'v', 'shorts', 'live'].includes(parts[0])) {
-          const id = parts[1];
-          if (id && /^[A-Za-z0-9_-]{11}$/.test(id)) return id;
-        }
-      }
-    } catch (e) {}
-
     return null;
   }
 
   function extractYouTubeIdFromFeature(feature) {
     if (!feature) return null;
-
     const props = feature.properties || {};
     const directCandidates = [
-      feature.videoId, feature.youtubeId, feature.youtube, feature.video,
-      feature.videoUrl, feature.youtubeUrl, feature.url, feature.link,
-      props.videoId, props.video_id, props.youtubeId, props.youtube_id,
-      props.youtube, props.video, props.videoUrl, props.video_url,
-      props.youtubeUrl, props.youtube_url, props.url, props.link,
+      feature.videoId, feature.youtubeId, props.videoId, props.youtubeId,
       props.gx_media_links, props.description, props.Description, props.name, props.Name
     ];
-
     for (const candidate of directCandidates) {
       const id = extractYouTubeId(candidate);
       if (id) return id;
     }
-
-    for (const [key, value] of Object.entries(props)) {
-      if (typeof value !== 'string') continue;
-
-      const keyLower = key.toLowerCase();
-      const id = extractYouTubeId(value);
-      if (id && (/youtube|video/.test(keyLower) || /youtube(?:-nocookie)?\.com|youtu\.be/i.test(value))) {
-        return id;
-      }
-    }
-
     return null;
   }
 
@@ -900,8 +1118,8 @@
     try {
       const lineBbox = turf.bbox(activeLine);
       const isMobile = window.innerWidth <= 640;
-      const pad = isMobile ? 30 : 60;
-      const rightPad = (isSplitMode || isMobile) ? pad : 410;
+      const pad = isMobile ? 35 : 65;
+      const rightPad = (isSplitMode || isMobile) ? pad : 420;
       map.fitBounds(lineBbox, { padding: { top: pad, bottom: pad, left: pad, right: rightPad }, maxZoom: 16.5, duration: 600 });
     } catch(err) {}
   }
@@ -941,87 +1159,86 @@
       });
 
       rawGeojsonData.features.sort((a, b) => a._timestamp - b._timestamp);
-      
+
       rawGeojsonData.features.forEach((f, index) => {
         f.id = index;
         f._globalId = index + 1;
         f._youtubeId = extractYouTubeIdFromFeature(f);
-        
+        f._themes = inferThemesFromFeature(f);
+
         const p = f.properties || {};
         f.properties = p;
-        
-        let c = getCorrectedCountry(f); 
+
+        let c = getCorrectedCountry(f);
         let sidos = new Set();
         let sigs = new Set();
 
         try {
           if (f.geometry && f.geometry.coordinates && f.geometry.coordinates.length > 0) {
-            // LineString / MultiLineString 시작 좌표 안전 추출
-            let coords = f.geometry.coordinates;
-            while (Array.isArray(coords[0]) && typeof coords[0][0] !== 'number') {
-              coords = coords[0];
+            const cleanC = sanitizeRouteCoordinates(f.geometry.coordinates, Boolean(p.reversed));
+            if (cleanC.length > 0) {
+              f._startCoord = cleanC[0];
+              f._endCoord = cleanC[cleanC.length - 1];
             }
-            const startCoord = coords[0];
+
+            const startCoord = f._startCoord || [126.9780, 37.5665];
             const startPt = turf.point(startCoord);
             const lon = startCoord[0];
             const lat = startCoord[1];
-            
+
             if (!c) {
-                let isKorea = (lon >= 124.0 && lon <= 132.0 && lat >= 33.0 && lat <= 39.0);
-                
-                if (isKorea) {
-                  c = '대한민국';
-                } else if (worldGeo && worldGeo.features) {
-                  for (const wf of worldGeo.features) {
-                    if (turf.booleanPointInPolygon(startPt, wf)) {
-                      let wName = wf.properties.NAME || wf.properties.ADMIN || wf.properties.name;
-                      if (wName === 'South Korea') { c = '대한민국'; break; }
-                      else if (wName === 'Japan') { c = '일본'; break; }
-                      else if (wName === 'Taiwan') { c = '대만'; break; }
-                      else if (wName === 'Singapore') { c = '싱가포르'; break; }
-                      else if (wName === 'Vietnam') { c = '베트남'; break; }
-                      else if (wName === 'Canada') { c = '캐나다'; break; }
-                      else if (wName === 'Russia') { c = '러시아'; break; }
-                      else if (wName === 'United States of America' || wName === 'United States') { c = '미국'; break; }
-                      else if (wName === 'South Africa') { c = '남아프리카공화국'; break; }
-                      else if (wName === 'China') { c = '중국'; break; }
-                      else if (wName === 'Malaysia') { c = '말레이시아'; break; }
-                      else if (wName && wName !== 'South Korea') { c = wName; break; }
-                    }
-                  }
-                }
-            }
-            if (!c) c = '대한민국';
-
-            p.country = c;
-
-            if (c === "대한민국") {
-              if (sidoGeo && sidoGeo.features) {
-                for (const sidoF of sidoGeo.features) {
-                  if (turf.booleanPointInPolygon(startPt, sidoF)) {
-                    let rawSido = sidoF.properties.name || sidoF.properties.CTP_KOR_NM;
-                    sidos.add(normalizeSido(rawSido));
-                    break; 
+              let isKorea = (lon >= 124.0 && lon <= 132.0 && lat >= 33.0 && lat <= 39.0);
+              if (isKorea) {
+                c = '대한민국';
+              } else if (worldGeo && worldGeo.features) {
+                for (const wf of worldGeo.features) {
+                  if (turf.booleanPointInPolygon(startPt, wf)) {
+                    let wName = wf.properties.NAME || wf.properties.ADMIN || wf.properties.name;
+                    if (wName === 'South Korea') { c = '대한민국'; break; }
+                    else if (wName === 'Japan') { c = '일본'; break; }
+                    else if (wName === 'Taiwan') { c = '대만'; break; }
+                    else if (wName === 'Singapore') { c = '싱가포르'; break; }
+                    else if (wName === 'Vietnam') { c = '베트남'; break; }
+                    else if (wName === 'Canada') { c = '캐나다'; break; }
+                    else if (wName === 'Russia') { c = '러시아'; break; }
+                    else if (wName === 'United States of America' || wName === 'United States') { c = '미국'; break; }
+                    else if (wName === 'South Africa') { c = '남아프리카공화국'; break; }
+                    else if (wName === 'China') { c = '중국'; break; }
+                    else if (wName === 'Malaysia') { c = '말레이시아'; break; }
+                    else if (wName && wName !== 'South Korea') { c = wName; break; }
                   }
                 }
               }
-              if (sigunguGeo && sigunguGeo.features) {
+            }
+            if (!c) c = '대한민국';
+            p.country = c;
+
+            if (c === "대한민국") {
+              if (!p.sido && sidoGeo && sidoGeo.features) {
+                for (const sidoF of sidoGeo.features) {
+                  if (turf.booleanPointInPolygon(startPt, sidoF)) {
+                    sidos.add(normalizeSido(sidoF.properties.name || sidoF.properties.CTP_KOR_NM));
+                    break;
+                  }
+                }
+              }
+              if (!p.sigungu && sigunguGeo && sigunguGeo.features) {
                 for (const sigF of sigunguGeo.features) {
                   if (turf.booleanPointInPolygon(startPt, sigF)) {
                     sigs.add(sigF.properties.name || sigF.properties.SIG_KOR_NM);
-                    break; 
+                    break;
                   }
                 }
               }
             }
           }
-        } catch (e) {
-          console.error(e);
-        }
+        } catch (e) { console.error(e); }
 
-        // 기존 수동 지정된 sido 값이 있더라도 정규화 적용
         if (p.sido && sidos.size === 0) {
           p.sido.split(',').forEach(s => sidos.add(normalizeSido(s)));
+        }
+        if (p.sigungu && sigs.size === 0) {
+          p.sigungu.split(',').forEach(s => sigs.add(s.trim()));
         }
 
         p.sido = sidos.size > 0 ? Array.from(sidos).join(', ') : (normalizeSido(p.sido) || "");
@@ -1034,7 +1251,7 @@
         if (c === "대한민국") {
           const sdArr = p.sido.split(',').map(s => normalizeSido(s)).filter(Boolean);
           const sigArr = p.sigungu.split(',').map(s => s.trim()).filter(Boolean);
-          
+
           sdArr.forEach(sd => {
             if (sd !== "-" && sd !== "") {
               if (!adminHierarchy[c][sd]) adminHierarchy[c][sd] = new Set();
@@ -1052,18 +1269,22 @@
         }
       });
 
+      // 연도 체크박스 생성
       const sortedYears = Array.from(availableYears).sort((a, b) => b.localeCompare(a));
       sortedYears.forEach(yr => {
-        mapSelectedYears.add(yr);
-        listSelectedYears.add(yr);
-        document.getElementById('map-year-checkboxes').innerHTML += `
-          <label class="year-checkbox-label">
-            <input type="checkbox" value="${yr}" checked onchange="onMapYearChange(this)"> ${yr}년
+        selectedYears.add(yr);
+        document.getElementById('year-checkboxes').innerHTML += `
+          <label class="checkbox-label">
+            <input type="checkbox" value="${yr}" checked onchange="onYearChange(this)"> ${yr}년
           </label>
         `;
-        document.getElementById('list-year-checkboxes').innerHTML += `
-          <label class="year-checkbox-label">
-            <input type="checkbox" value="${yr}" checked onchange="onListYearChange(this)"> ${yr}년
+      });
+
+      // 테마 체크박스 생성
+      THEME_DEFINITIONS.forEach(t => {
+        document.getElementById('theme-checkboxes').innerHTML += `
+          <label class="checkbox-label">
+            <input type="checkbox" value="${t.key}" checked onchange="onThemeChange(this)"> ${t.label}
           </label>
         `;
       });
@@ -1074,26 +1295,36 @@
       map.addLayer({ id: 'routes-hover-line', type: 'line', source: 'routes', layout: { 'line-join': 'round', 'line-cap': 'round' }, filter: ['==', ['id'], -9999], paint: { 'line-color': '#ffffff', 'line-width': 5.8, 'line-opacity': 0.85 } });
       map.addLayer({ id: 'routes-active-line', type: 'line', source: 'routes', layout: { 'line-join': 'round', 'line-cap': 'round' }, filter: ['==', ['id'], -9999], paint: { 'line-color': '#ffe600', 'line-width': 5.5, 'line-opacity': 1.0 } });
 
-      buildFilterDropdowns('map');
-      buildFilterDropdowns('list');
-
+      buildUnifiedFilterDropdowns();
       resetMapToInitial();
       openRouteFromUrl();
     });
 
     const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
 
-    map.on('mouseenter', 'routes-hitbox', (e) => {
+    map.on('mousemove', 'routes-hitbox', (e) => {
       map.getCanvas().style.cursor = 'pointer';
+      // 마우스 반경 내 중첩된 코스 개수 파악
+      const bbox = [[e.point.x - 6, e.point.y - 6], [e.point.x + 6, e.point.y + 6]];
+      const rendered = map.queryRenderedFeatures(bbox, { layers: ['routes-hitbox'] });
+      const uniqueMap = new Map();
+      rendered.forEach(rf => {
+        const fid = rf.id !== undefined ? rf.id : rf.properties.id;
+        if (!uniqueMap.has(fid)) uniqueMap.set(fid, rf);
+      });
+
       const feature = e.features[0];
       hoveredLineId = feature.id !== undefined ? feature.id : feature.properties.id;
       updateHoverHighlight(hoveredLineId);
 
       const props = feature.properties || {};
       const title = props.name || props.Name || '도보 코스';
-      const globalId = feature._globalId || (feature.id !== undefined ? feature.id + 1 : '');
+      const origFeat = rawGeojsonData.features[hoveredLineId] || feature;
+      const globalId = origFeat._globalId || (hoveredLineId + 1);
       const locTag = formatLocationTag(props);
-      hoverPopup.setLngLat(e.lngLat).setHTML(`<strong>${globalId}. ${title}</strong>${locTag ? '<br><span style="color:#aaa; font-size:11px;">' + locTag + '</span>' : ''}`).addTo(map);
+      const overlapBadge = uniqueMap.size > 1 ? `<br><span style="color:#ffe600; font-size:11px;">⚡ 이 지점에 겹친 코스 ${uniqueMap.size}개 (클릭하여 선택)</span>` : '';
+
+      hoverPopup.setLngLat(e.lngLat).setHTML(`<strong>${globalId}. ${title}</strong>${locTag ? '<br><span style="color:#aaa; font-size:11px;">' + locTag + '</span>' : ''}${overlapBadge}`).addTo(map);
     });
 
     map.on('mouseleave', 'routes-hitbox', () => {
@@ -1103,47 +1334,108 @@
       hoverPopup.remove();
     });
 
+    // 지도 클릭 이벤트: 1) 현재 활성 노선 클릭 시 구간 점프(Seek), 2) 중복 경로 클릭 시 팝업 표시
     map.on('click', 'routes-hitbox', (e) => {
-      const clickedFeat = e.features[0];
-      playRouteFeature(clickedFeat);
+      const bbox = [[e.point.x - 7, e.point.y - 7], [e.point.x + 7, e.point.y + 7]];
+      const rendered = map.queryRenderedFeatures(bbox, { layers: ['routes-hitbox'] });
+
+      const uniqueIds = [];
+      const seen = new Set();
+      rendered.forEach(rf => {
+        const fid = rf.id !== undefined ? rf.id : rf.properties.id;
+        if (fid !== undefined && !seen.has(fid)) {
+          seen.add(fid);
+          uniqueIds.push(fid);
+        }
+      });
+
+      // 이미 재생 중인 단독 코스를 다시 클릭했고 클릭이동(Seek)이 켜져 있다면 해당 지점 시간으로 점프
+      if (isClickSeekEnabled && activeLine && uniqueIds.length === 1 && uniqueIds[0] === activeLineId && currentCleanLineTurf && currentLineLengthKm > 0) {
+        try {
+          const clickedPt = turf.point([e.lngLat.lng, e.lngLat.lat]);
+          const snapped = turf.nearestPointOnLine(currentCleanLineTurf, clickedPt, { units: 'kilometers' });
+          if (snapped && snapped.properties && typeof snapped.properties.location === 'number') {
+            const ratio = Math.min(1, Math.max(0, snapped.properties.location / currentLineLengthKm));
+            if (playerReady && player && typeof player.getDuration === 'function') {
+              const dur = player.getDuration();
+              if (dur > 0) player.seekTo(dur * ratio, true);
+            }
+          }
+        } catch (err) {}
+        return;
+      }
+
+      // 겹친 코스가 2개 이상이면 다중 선택 팝업 표시
+      if (uniqueIds.length > 1) {
+        showOverlapSelectionPopup(e.lngLat, uniqueIds);
+      } else if (uniqueIds.length === 1) {
+        const targetFeature = rawGeojsonData.features.find(f => f.id === uniqueIds[0]);
+        if (targetFeature) playRouteFeature(targetFeature);
+      }
     });
   });
+
+  // 강남대로 등 중복 경로 다중 선택 팝업
+  function showOverlapSelectionPopup(lngLat, featureIds) {
+    if (activeOverlapPopup) activeOverlapPopup.remove();
+
+    const itemsHtml = featureIds.map(fid => {
+      const f = rawGeojsonData.features.find(item => item.id === fid);
+      if (!f) return '';
+      const p = f.properties || {};
+      const title = p.name || p.Name || '도보 코스';
+      const isCurrent = (fid === activeLineId) ? 'style="border:1px solid #ffe600;"' : '';
+      return `<div class="overlap-item" ${isCurrent} onclick="selectFromOverlapPopup(${fid})">
+        <strong>#${f._globalId}</strong> ${title}
+      </div>`;
+    }).join('');
+
+    const html = `
+      <div class="overlap-popup-title">📍 이 구간을 지나는 코스 (${featureIds.length}개)</div>
+      <div class="overlap-list">${itemsHtml}</div>
+    `;
+
+    activeOverlapPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: true, offset: 12 })
+      .setLngLat(lngLat)
+      .setHTML(html)
+      .addTo(map);
+  }
+
+  window.selectFromOverlapPopup = function(featureId) {
+    if (activeOverlapPopup) {
+      activeOverlapPopup.remove();
+      activeOverlapPopup = null;
+    }
+    playRouteById(featureId);
+  };
 
   function openRouteFromUrl() {
     const params = new URLSearchParams(window.location.search);
     const routeCode = params.get('route');
-
     if (!routeCode || !rawGeojsonData) return;
 
     const feature = rawGeojsonData.features.find(f => {
       const p = f.properties || {};
-      return String(p.code || '').trim() === routeCode.trim();
+      return String(p.code || '').trim().toLowerCase() === routeCode.trim().toLowerCase();
     });
 
-    if (!feature) {
-      console.warn('URL에서 해당 루트를 찾을 수 없습니다:', routeCode);
-      return;
-    }
-
-    playRouteFeature(feature);
+    if (feature) playRouteFeature(feature);
   }
 
   function playRouteFeature(feature) {
     activeLine = feature;
     activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
+    isReversedDirection = false;
+    document.getElementById('btn-reverse-dir').classList.remove('active');
+
     const props = activeLine.properties || {};
-    
     const videoId = activeLine._youtubeId || extractYouTubeIdFromFeature(activeLine);
     activeLine._youtubeId = videoId || null;
 
-    if (!videoId) {
-      document.getElementById('video-title').innerText = `${activeLine._globalId || ''}. ${props.name || props.Name || '도보 코스'} (영상 연결 정보 없음)`;
-      document.getElementById('player-panel').style.display = 'flex';
-      if (player && playerReady && typeof player.stopVideo === 'function') {
-        try { player.stopVideo(); } catch (e) {}
-      }
-      if (currentMode === 'list') renderRouteList();
-      return;
+    // URL 주소창 파라미터 실시간 갱신 (딥링크)
+    if (props.code) {
+      const newUrl = `${window.location.pathname}?route=${encodeURIComponent(props.code)}`;
+      window.history.replaceState({ path: newUrl }, '', newUrl);
     }
 
     const globalId = activeLine._globalId || (activeLine.id !== undefined ? activeLine.id + 1 : '');
@@ -1151,18 +1443,21 @@
 
     updateHoverHighlight(null);
     updateActiveRouteHighlight(activeLineId);
+    setupRouteMarkers(activeLine);
 
-    document.getElementById('video-title').innerText = title;
+    document.getElementById('video-title').innerText = videoId ? title : `${title} (영상 연결 정보 없음)`;
     document.getElementById('player-panel').style.display = 'flex';
 
     if (currentMode === 'map') {
       zoomToActiveLine();
+    } else {
+      renderRouteList();
     }
 
-    loadRouteVideo(videoId);
-
-    if (currentMode === 'list') {
-      renderRouteList();
+    if (videoId) {
+      loadRouteVideo(videoId);
+    } else if (player && playerReady && typeof player.stopVideo === 'function') {
+      try { player.stopVideo(); } catch (e) {}
     }
 
     setTimeout(() => {
@@ -1178,34 +1473,39 @@
     if (isSplitMode && currentMode === 'map') toggleSplitMode();
 
     pendingVideoId = null;
-
     if (playerReady && player && typeof player.stopVideo === 'function') {
       player.stopVideo();
     }
 
     activeLine = null;
     activeLineId = null;
+    clearRouteMarkers();
     updateActiveRouteHighlight(null);
     updateHoverHighlight(null);
+    document.getElementById('nearby-box').style.display = 'none';
+    window.history.replaceState({}, '', window.location.pathname);
 
     document.getElementById('video-title').innerText = "코스 명칭";
-    renderRouteList();
+    if (currentMode === 'list') renderRouteList();
   }
 
-  function onMapYearChange(cb) {
-    if (cb.checked) mapSelectedYears.add(cb.value);
-    else mapSelectedYears.delete(cb.value);
-    applyMapFilter();
+  function onYearChange(cb) {
+    if (cb.checked) selectedYears.add(cb.value);
+    else selectedYears.delete(cb.value);
+    applyUnifiedFilter(true);
   }
 
-  function onListYearChange(cb) {
-    if (cb.checked) listSelectedYears.add(cb.value);
-    else listSelectedYears.delete(cb.value);
-    renderRouteList();
+  function onThemeChange(cb) {
+    if (cb.checked) selectedThemes.add(cb.value);
+    else selectedThemes.delete(cb.value);
+    applyUnifiedFilter(true);
   }
 
-  function buildFilterDropdowns(type) {
-    const cSel = document.getElementById(`${type}-country-select`);
+  function buildUnifiedFilterDropdowns() {
+    const cSel = document.getElementById('country-select');
+    const sdSel = document.getElementById('sido-select');
+    const sgSel = document.getElementById('sigungu-select');
+
     cSel.innerHTML = `<option value="ALL">${formatCountryLabel('ALL')}</option>`;
     const countries = Object.keys(adminHierarchy).sort((a, b) => (a === '대한민국' ? -1 : b === '대한민국' ? 1 : a.localeCompare(b)));
     countries.forEach(country => {
@@ -1214,8 +1514,6 @@
 
     cSel.addEventListener('change', () => {
       const c = cSel.value;
-      const sdSel = document.getElementById(`${type}-sido-select`);
-      const sgSel = document.getElementById(`${type}-sigungu-select`);
       sdSel.innerHTML = `<option value="ALL">${formatSidoLabel('ALL')}</option>`;
       sgSel.innerHTML = `<option value="ALL">${formatSigunguLabel('ALL')}</option>`;
 
@@ -1229,13 +1527,12 @@
         sdSel.disabled = true;
         sgSel.disabled = true;
       }
-      if (type === 'map') applyMapFilter(); else renderRouteList();
+      applyUnifiedFilter(true);
     });
 
-    document.getElementById(`${type}-sido-select`).addEventListener('change', () => {
+    sdSel.addEventListener('change', () => {
       const c = cSel.value;
-      const s = document.getElementById(`${type}-sido-select`).value;
-      const sgSel = document.getElementById(`${type}-sigungu-select`);
+      const s = sdSel.value;
       sgSel.innerHTML = `<option value="ALL">${formatSigunguLabel('ALL')}</option>`;
 
       if (c === '대한민국' && s !== 'ALL' && adminHierarchy[c] && adminHierarchy[c][s]) {
@@ -1246,59 +1543,22 @@
       } else {
         sgSel.disabled = true;
       }
-      if (type === 'map') applyMapFilter(); else renderRouteList();
+      applyUnifiedFilter(true);
     });
 
-    document.getElementById(`${type}-sigungu-select`).addEventListener('change', () => {
-      if (type === 'map') applyMapFilter(); else renderRouteList();
+    sgSel.addEventListener('change', () => {
+      applyUnifiedFilter(true);
     });
   }
 
-  function applyMapFilter() {
-    if (!rawGeojsonData) return;
-    const c = document.getElementById('map-country-select').value;
-    const sd = document.getElementById('map-sido-select').value;
-    const sgg = document.getElementById('map-sigungu-select').value;
-
-    const filtered = rawGeojsonData.features.filter(f => {
-      const p = f.properties || {};
-      if (c !== 'ALL' && p.country !== c) return false;
-      if (c === '대한민국' && sd !== 'ALL') {
-        const sidos = (p.sido || "").split(',').map(s => normalizeSido(s));
-        if (!sidos.includes(sd)) return false;
-      }
-      if (c === '대한민국' && sd !== 'ALL' && sgg !== 'ALL') {
-        const sigs = (p.sigungu || "").split(',').map(s => s.trim());
-        if (!sigs.includes(sgg)) return false;
-      }
-      const yr = extractYear(f);
-      if (yr && !mapSelectedYears.has(yr)) return false;
-      return true;
-    });
-
-    const matchedIds = filtered.map(f => f.id);
-    const filterExpression = (c === 'ALL' && mapSelectedYears.size === availableYears.size) ? null : ['in', ['id'], ['literal', matchedIds]];
-    
-    map.setFilter('routes-line', filterExpression);
-    map.setFilter('routes-hitbox', filterExpression);
-
-    if (filtered.length > 0) {
-      try {
-        const fc = turf.featureCollection(filtered);
-        const bbox = turf.bbox(fc);
-        map.fitBounds(bbox, { padding: window.innerWidth <= 640 ? 40 : 80, maxZoom: 15, duration: 800 });
-      } catch(e) {}
-    }
-  }
-
-  function getFilteredListFeatures() {
+  function getFilteredFeatures(includeSearchQuery = false) {
     if (!rawGeojsonData) return [];
-    const c = document.getElementById('list-country-select').value;
-    const sd = document.getElementById('list-sido-select').value;
-    const sgg = document.getElementById('list-sigungu-select').value;
-    const searchVal = document.getElementById('search-input').value.trim().toLowerCase();
+    const c = document.getElementById('country-select').value;
+    const sd = document.getElementById('sido-select').value;
+    const sgg = document.getElementById('sigungu-select').value;
+    const searchVal = includeSearchQuery ? document.getElementById('search-input').value.trim().toLowerCase() : '';
 
-    let filtered = rawGeojsonData.features.filter(f => {
+    return rawGeojsonData.features.filter(f => {
       const p = f.properties || {};
       if (c !== 'ALL' && p.country !== c) return false;
       if (c === '대한민국' && sd !== 'ALL') {
@@ -1309,58 +1569,94 @@
         const sigs = (p.sigungu || "").split(',').map(s => s.trim());
         if (!sigs.includes(sgg)) return false;
       }
+
       const yr = extractYear(f);
-      if (yr && !listSelectedYears.has(yr)) return false;
+      if (yr && !selectedYears.has(yr)) return false;
+
+      // 테마 필터 확인 (하나라도 일치하면 통과)
+      if (selectedThemes.size < THEME_DEFINITIONS.length) {
+        let hasTheme = false;
+        if (f._themes) {
+          for (const t of f._themes) {
+            if (selectedThemes.has(t)) { hasTheme = true; break; }
+          }
+        }
+        if (!hasTheme) return false;
+      }
 
       if (searchVal) {
         const title = (p.name || p.Name || '').toLowerCase();
+        const code = String(p.code || '').toLowerCase();
         const globalIdStr = String(f._globalId);
-        if (!title.includes(searchVal) && !globalIdStr.includes(searchVal)) {
+        if (!title.includes(searchVal) && !code.includes(searchVal) && !globalIdStr.includes(searchVal)) {
           return false;
         }
       }
-
       return true;
     });
+  }
 
-    filtered.sort((a, b) => {
-      return sortAscending ? (a._timestamp - b._timestamp) : (b._timestamp - a._timestamp);
-    });
+  function applyUnifiedFilter(shouldFitBounds = true) {
+    if (!rawGeojsonData) return;
+    const filtered = getFilteredFeatures(false);
+    const matchedIds = filtered.map(f => f.id);
+    const filterExpression = matchedIds.length === rawGeojsonData.features.length ? null : ['in', ['id'], ['literal', matchedIds]];
 
-    return filtered;
+    if (map.getLayer('routes-line')) {
+      map.setFilter('routes-line', filterExpression);
+      map.setFilter('routes-hitbox', filterExpression);
+    }
+
+    if (currentMode === 'map' && shouldFitBounds && filtered.length > 0) {
+      try {
+        const fc = turf.featureCollection(filtered);
+        const bbox = turf.bbox(fc);
+        map.fitBounds(bbox, { padding: window.innerWidth <= 640 ? 40 : 80, maxZoom: 15, duration: 700 });
+      } catch(e) {}
+    }
+
+    if (currentMode === 'list') {
+      renderRouteList();
+    }
   }
 
   function playRouteById(featureId) {
     if (!rawGeojsonData || !Array.isArray(rawGeojsonData.features)) return;
-
     const feature = rawGeojsonData.features.find(f => f.id === featureId);
-    if (feature) {
-      playRouteFeature(feature);
-    }
+    if (feature) playRouteFeature(feature);
   }
 
   function renderRouteList() {
     const listScrollArea = document.getElementById('list-scroll-area');
-    const features = getFilteredListFeatures();
+    let features = getFilteredFeatures(true);
+
+    features.sort((a, b) => sortAscending ? (a._timestamp - b._timestamp) : (b._timestamp - a._timestamp));
+    document.getElementById('list-count-label').innerText = `총 ${features.length}개 코스`;
 
     if (features.length === 0) {
       listScrollArea.innerHTML = `<div style="text-align:center; color:#888; padding:30px;">조건에 일치하는 워킹 코스가 없습니다.</div>`;
       return;
     }
 
+    const themeLabelMap = Object.fromEntries(THEME_DEFINITIONS.map(t => [t.key, t.label]));
     let html = '';
     features.forEach((f) => {
       const props = f.properties || {};
       const title = props.name || props.Name || '도보 코스';
       const locTag = formatLocationTag(props);
       const isPlaying = (activeLineId === f.id);
+      const badges = f._themes ? Array.from(f._themes).map(k => `<span class="theme-badge">${themeLabelMap[k] || k}</span>`).join('') : '';
 
       html += `
         <div class="route-item ${isPlaying ? 'active-playing' : ''}" onclick="playRouteById(${f.id})">
           <div class="route-number">${f._globalId}</div>
           <div class="route-details">
             <div class="route-item-title">${title}</div>
-            <div class="route-item-meta">${locTag}</div>
+            <div class="route-item-meta">
+              <span>${locTag}</span>
+              ${props.code ? `<span style="color:#888;">(${props.code})</span>` : ''}
+              ${badges}
+            </div>
           </div>
         </div>
       `;
