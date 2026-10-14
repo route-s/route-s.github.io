@@ -47,7 +47,7 @@
       background-color: #1a1a1a;
     }
 
-    /* 통합 상단 필터바 (DOM 슬림화 적용) */
+    /* 통합 상단 필터바 */
     .filter-container {
       position: absolute;
       top: 15px;
@@ -229,7 +229,7 @@
     #info-box { padding: 10px 12px; background: rgba(22, 25, 34, 0.98); display: flex; flex-direction: column; gap: 7px; }
     #video-title { font-size: 13.5px; font-weight: bold; color: #00ffff; line-height: 1.35; width: 100%; }
 
-    /* 플레이어 툴바 (진행률, 방향반전, 클릭이동, 링크복사) */
+    /* 플레이어 툴바 */
     #player-toolbar {
       display: flex;
       align-items: center;
@@ -254,6 +254,8 @@
     }
     .tool-chip:hover { background: #32364a; color: #fff; border-color: #00ffff; }
     .tool-chip.active { background: rgba(0, 255, 255, 0.18); color: #00ffff; border-color: #00ffff; font-weight: bold; }
+    .tool-chip.overlap-switch { background: rgba(255, 230, 0, 0.15); color: #ffe600; border-color: rgba(255, 230, 0, 0.45); display: none; }
+    .tool-chip.overlap-switch:hover { background: #ffe600; color: #000; font-weight: bold; }
     #sync-status { font-size: 10.5px; color: #ffe600; font-family: monospace; }
 
     /* 인접 코스 이어보기 추천 박스 */
@@ -387,7 +389,7 @@
       font-size: 12px !important;
       box-shadow: 0 8px 25px rgba(0,0,0,0.8) !important;
       border: 1px solid rgba(0, 255, 255, 0.35) !important;
-      max-width: 300px !important;
+      max-width: 310px !important;
     }
     .maplibregl-popup-close-button { color: #aaa !important; font-size: 16px !important; right: 6px !important; top: 4px !important; }
     .overlap-popup-title { font-size: 11.5px; font-weight: bold; color: #ffe600; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.15); }
@@ -442,7 +444,7 @@
 <body class="map-mode">
 
 <div id="app-container">
-  <!-- 통합 상단 필터바 (단일 DOM) -->
+  <!-- 통합 상단 필터바 -->
   <div id="main-filter-container" class="filter-container">
     <img id="logo-icon" src="./logo.png" alt="ROUTE S" title="ROUTE S 채널 바로가기" onclick="window.open('https://www.youtube.com/@루트에스', '_blank')">
 
@@ -483,8 +485,8 @@
       <div id="video-title">코스 명칭</div>
       <div id="player-toolbar">
         <span id="sync-status">🟢 S ➔ 🏁 E 대기중</span>
-        <div style="display:flex; gap:4px;">
-          <button id="btn-reverse-dir" class="tool-chip" onclick="toggleRouteDirection()" title="시작점(S)과 도착점(E) 진행 방향을 반대로 뒤집습니다">🔄 방향반전</button>
+        <div style="display:flex; gap:4px; align-items:center;">
+          <button id="btn-overlap-switch" class="tool-chip overlap-switch" onclick="reopenOverlapPopup()" title="방금 클릭한 지점을 지나는 다른 중복 코스 목록을 엽니다">📑 겹친 다른 코스</button>
           <button id="btn-click-seek" class="tool-chip active" onclick="toggleClickSeek()" title="켜두면 지도 위 노선을 클릭할 때 영상이 해당 위치 시간으로 이동합니다">📍 클릭이동 ON</button>
           <button class="tool-chip" onclick="copyCurrentRouteLink()" title="이 코스의 딥링크 URL 복사">🔗 링크복사</button>
         </div>
@@ -520,6 +522,7 @@
   let player = null;
   let playerReady = false;
   let pendingVideoId = null;
+  let pendingSeekRatio = null; // 최초 클릭 시 해당 지점 비율(0.0~1.0)로 즉시 점프하기 위한 변수
   let activeLine = null;
   let activeLineId = null;
   let hoveredLineId = null;
@@ -531,8 +534,7 @@
   let currentMode = 'map';
   let sortAscending = true;
 
-  // 시간-위치 동기화 관련 상태 변수
-  let isReversedDirection = false;
+  // 시간-위치 동기화 및 중복 구간 상태 변수
   let isClickSeekEnabled = true;
   let currentCleanedCoords = [];
   let currentCleanLineTurf = null;
@@ -542,8 +544,8 @@
   let walkerMarker = null;
   let syncTimer = null;
   let activeOverlapPopup = null;
+  let lastOverlapInfo = null; // { lngLat, ids }
 
-  // 자동 분류 테마 정의
   const THEME_DEFINITIONS = [
     { key: 'day', label: '☀️ 주간 산책' },
     { key: 'night', label: '🌙 야간/저녁' },
@@ -631,7 +633,6 @@
     return `${props.name || ""} ${props.Name || ""} ${descText} ${props.Description || ""}`;
   }
 
-  // 텍스트 및 기존 속성 기반 테마 자동 추론 (1,800개 데이터 자동 분류)
   function inferThemesFromFeature(feature) {
     const props = feature.properties || {};
     if (Array.isArray(props.themes) && props.themes.length > 0) {
@@ -641,34 +642,28 @@
     const text = getFeatureFullText(feature).toLowerCase();
     const themes = new Set();
 
-    // 1. 야간/주간 판별
     if (/야간|야경|밤|저녁|퇴근|night|evening|오후\s*(6|7|8|9|10|11)시|밤산책/.test(text)) {
       themes.add('night');
     } else {
       themes.add('day');
     }
 
-    // 2. 우천/설경 판별
     if (/우천|비오는|비\s*온|봄비|장마|폭우|빗방울|눈|폭설|설경|소낙눈|rain|snow|wet/.test(text)) {
       themes.add('rain_snow');
     }
 
-    // 3. 공원/캠퍼스/숲길 판별
     if (/공원|대학교|대학|캠퍼스|숲|산책로|제방길|하천|수목원|식물원|천\b|univ|park|campus|forest/.test(text)) {
       themes.add('park_campus');
     }
 
-    // 4. 골목/주택가/아파트 판별
     if (/골목|주택|아파트|단지|빌라|마을|재개발|뉴타운|초등|중학교|고등|alley|village|apt|residential/.test(text)) {
       themes.add('alley');
     }
 
-    // 5. 도심/번화가/상권 판별
     if (/명동|강남|홍대|성수|신촌|을지로|종로|이태원|압구정|가로수길|로데오|광화문|남대문|동대문|시장|백화점|오피스|역세권|번화가|메인스트리트|downtown|market|street/.test(text)) {
       themes.add('urban');
     }
 
-    // 아무 공간 속성도 안 걸렸을 경우 기본 골목/도심 보완
     if (!themes.has('alley') && !themes.has('urban') && !themes.has('park_campus')) {
       themes.add('urban');
     }
@@ -676,11 +671,10 @@
     return themes;
   }
 
-  // KML 수정으로 인해 깨지거나 순간이동하는 좌표 배열을 매끄럽게 정제 (Line Healing)
-  function sanitizeRouteCoordinates(rawCoords, shouldReverse = false) {
+  // 좌표 배열 정제
+  function sanitizeRouteCoordinates(rawCoords) {
     if (!rawCoords || rawCoords.length === 0) return [];
 
-    // MultiLineString 등 중첩 배열 평탄화
     let flat = [];
     function flatten(arr) {
       if (!Array.isArray(arr) || arr.length === 0) return;
@@ -693,15 +687,13 @@
     flatten(rawCoords);
     if (flat.length < 2) return flat;
 
-    // 연속 중복점 제거 및 비정상 스파이크(갔다가 즉시 원래 자리로 튀는 점) 필터링
     let cleaned = [flat[0]];
     for (let i = 1; i < flat.length; i++) {
       const prev = cleaned[cleaned.length - 1];
       const curr = flat[i];
       const distKm = turf.distance(turf.point(prev), turf.point(curr), { units: 'kilometers' });
-      if (distKm < 0.0015) continue; // 1.5m 이내 중복점 스킵
+      if (distKm < 0.0015) continue;
 
-      // 만약 이전 점과 250m 이상 갑자기 튀는데, 그 다음 점은 이전 점 근처라면 잘못 찍힌 점으로 간주하고 무시
       if (distKm > 0.25 && i + 1 < flat.length) {
         const next = flat[i + 1];
         const prevToNextKm = turf.distance(turf.point(prev), turf.point(next), { units: 'kilometers' });
@@ -711,8 +703,36 @@
     }
 
     if (cleaned.length < 2) cleaned = [flat[0], flat[flat.length - 1]];
-    if (shouldReverse) cleaned.reverse();
     return cleaned;
+  }
+
+  // 특정 클릭 지점(lngLat)이 해당 코스에서 몇 % 위치(0.0 ~ 1.0)인지 계산
+  function calculateClickRatioOnFeature(feature, lngLat) {
+    if (!feature || !lngLat || !feature.geometry || !feature.geometry.coordinates) return 0;
+    try {
+      const cleanCoords = sanitizeRouteCoordinates(feature.geometry.coordinates);
+      if (cleanCoords.length < 2) return 0;
+      const line = turf.lineString(cleanCoords);
+      const totalKm = turf.length(line, { units: 'kilometers' });
+      if (totalKm <= 0) return 0;
+
+      const clickedPt = turf.point([lngLat.lng, lngLat.lat]);
+      const snapped = turf.nearestPointOnLine(line, clickedPt, { units: 'kilometers' });
+      if (snapped && snapped.properties && typeof snapped.properties.location === 'number') {
+        const ratio = Math.min(1, Math.max(0, snapped.properties.location / totalKm));
+        // 출발점 극초반(2% 미만)을 누른 경우 깔끔하게 0초부터 재생
+        return ratio < 0.02 ? 0 : ratio;
+      }
+    } catch (e) {}
+    return 0;
+  }
+
+  function formatTimeMMSS(seconds) {
+    if (!seconds || isNaN(seconds) || seconds < 0) return "00:00";
+    const s = Math.floor(seconds);
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   }
 
   function getCorrectedCountry(feature) {
@@ -879,13 +899,29 @@
             event.target.setSize(pc.clientWidth, pc.clientHeight);
           }
           startSyncLoop();
+        },
+        onStateChange: function(event) {
+          // 새 영상이 로드되어 재생(PLAYING=1) 또는 버퍼링/큐잉 될 때,
+          // 최초 클릭 지점 비율(pendingSeekRatio)이 대기 중이면 즉시 해당 시간으로 이동!
+          if ((event.data === YT.PlayerState.PLAYING || event.data === YT.PlayerState.BUFFERING || event.data === YT.PlayerState.CUED) && pendingSeekRatio !== null) {
+            const dur = event.target.getDuration();
+            if (dur && dur > 0) {
+              const targetSec = dur * pendingSeekRatio;
+              pendingSeekRatio = null;
+              if (targetSec > 1) {
+                event.target.seekTo(targetSec, true);
+              }
+            }
+          }
         }
       }
     });
   }
 
-  function loadRouteVideo(videoId) {
+  function loadRouteVideo(videoId, initialSeekRatio = null) {
     if (!videoId) return;
+    pendingSeekRatio = (initialSeekRatio !== null && initialSeekRatio > 0) ? initialSeekRatio : null;
+
     if (!playerReady || !player || typeof player.loadVideoById !== 'function') {
       pendingVideoId = videoId;
       return;
@@ -901,9 +937,19 @@
       if (typeof player.getCurrentTime !== 'function' || typeof player.getDuration !== 'function') return;
 
       const duration = player.getDuration();
-      const current = player.getCurrentTime();
       if (!duration || duration <= 0) return;
 
+      // 만약 onStateChange에서 미처 처리되지 않은 초기 점프 비율이 남아있다면 여기서 즉시 실행
+      if (pendingSeekRatio !== null) {
+        const targetSec = duration * pendingSeekRatio;
+        pendingSeekRatio = null;
+        if (targetSec > 1 && typeof player.seekTo === 'function') {
+          player.seekTo(targetSec, true);
+          return;
+        }
+      }
+
+      const current = player.getCurrentTime();
       const ratio = Math.min(1, Math.max(0, current / duration));
       const targetDistKm = currentLineLengthKm * ratio;
 
@@ -918,24 +964,20 @@
             walkerMarker.setLngLat(pt.geometry.coordinates);
           }
           const pct = Math.round(ratio * 100);
-          const distM = Math.round(targetDistKm * 1000);
-          const totalM = Math.round(currentLineLengthKm * 1000);
-          document.getElementById('sync-status').innerText = `🏃 ${pct}% (${distM}m / ${totalM}m)`;
+          const curTimeStr = formatTimeMMSS(current);
+          const totTimeStr = formatTimeMMSS(duration);
+          document.getElementById('sync-status').innerText = `🏃 ${curTimeStr} / ${totTimeStr} (${pct}%)`;
         }
       } catch (e) {}
     }, 250);
   }
 
   // 시점(S), 종점(E), 현재위치 마커 생성 및 갱신
-  function setupRouteMarkers(feature) {
+  function setupRouteMarkers(feature, initialRatio = 0) {
     clearRouteMarkers();
     if (!feature || !feature.geometry || !feature.geometry.coordinates) return;
 
-    const props = feature.properties || {};
-    const savedReverse = Boolean(props.reversed);
-    const effectiveReverse = isReversedDirection ? !savedReverse : savedReverse;
-
-    currentCleanedCoords = sanitizeRouteCoordinates(feature.geometry.coordinates, effectiveReverse);
+    currentCleanedCoords = sanitizeRouteCoordinates(feature.geometry.coordinates);
     if (currentCleanedCoords.length < 2) return;
 
     currentCleanLineTurf = turf.lineString(currentCleanedCoords);
@@ -954,14 +996,24 @@
     eEl.innerText = 'E';
     endMarker = new maplibregl.Marker({ element: eEl }).setLngLat(endCoord).addTo(map);
 
+    // 최초 클릭한 지점이 있으면 워커 마커도 해당 지점에 바로 배치
+    let initialWalkerCoord = startCoord;
+    if (initialRatio > 0 && currentLineLengthKm > 0) {
+      try {
+        const pt = turf.along(currentCleanLineTurf, currentLineLengthKm * initialRatio, { units: 'kilometers' });
+        if (pt && pt.geometry && pt.geometry.coordinates) {
+          initialWalkerCoord = pt.geometry.coordinates;
+        }
+      } catch (e) {}
+    }
+
     const wEl = document.createElement('div');
     wEl.className = 'route-marker marker-walker';
-    walkerMarker = new maplibregl.Marker({ element: wEl }).setLngLat(startCoord).addTo(map);
+    walkerMarker = new maplibregl.Marker({ element: wEl }).setLngLat(initialWalkerCoord).addTo(map);
 
     const totalM = Math.round(currentLineLengthKm * 1000);
     document.getElementById('sync-status').innerText = `🟢S➔🏁E (총 ${totalM}m)`;
 
-    // 종점(E) 기준 인접 코스 추천 업데이트
     updateNearbyRoutes(endCoord, feature.id);
   }
 
@@ -972,13 +1024,6 @@
     currentCleanedCoords = [];
     currentCleanLineTurf = null;
     currentLineLengthKm = 0;
-  }
-
-  function toggleRouteDirection() {
-    if (!activeLine) return;
-    isReversedDirection = !isReversedDirection;
-    document.getElementById('btn-reverse-dir').classList.toggle('active', isReversedDirection);
-    setupRouteMarkers(activeLine);
   }
 
   function toggleClickSeek() {
@@ -1000,7 +1045,7 @@
     });
   }
 
-  // 종점 반경 600m 이내 인접 코스 자동 탐색 및 추천
+  // 종점 반경 650m 이내 인접 코스 자동 탐색 및 추천
   function updateNearbyRoutes(endCoord, currentId) {
     const box = document.getElementById('nearby-box');
     const listEl = document.getElementById('nearby-list');
@@ -1015,7 +1060,7 @@
     rawGeojsonData.features.forEach(f => {
       if (f.id === currentId || !f._startCoord) return;
       const distKm = turf.distance(endPt, turf.point(f._startCoord), { units: 'kilometers' });
-      if (distKm <= 0.65) { // 650m 이내
+      if (distKm <= 0.65) {
         candidates.push({ feature: f, distM: Math.round(distKm * 1000) });
       }
     });
@@ -1175,7 +1220,7 @@
 
         try {
           if (f.geometry && f.geometry.coordinates && f.geometry.coordinates.length > 0) {
-            const cleanC = sanitizeRouteCoordinates(f.geometry.coordinates, Boolean(p.reversed));
+            const cleanC = sanitizeRouteCoordinates(f.geometry.coordinates);
             if (cleanC.length > 0) {
               f._startCoord = cleanC[0];
               f._endCoord = cleanC[cleanC.length - 1];
@@ -1269,7 +1314,6 @@
         }
       });
 
-      // 연도 체크박스 생성
       const sortedYears = Array.from(availableYears).sort((a, b) => b.localeCompare(a));
       sortedYears.forEach(yr => {
         selectedYears.add(yr);
@@ -1280,7 +1324,6 @@
         `;
       });
 
-      // 테마 체크박스 생성
       THEME_DEFINITIONS.forEach(t => {
         document.getElementById('theme-checkboxes').innerHTML += `
           <label class="checkbox-label">
@@ -1304,27 +1347,46 @@
 
     map.on('mousemove', 'routes-hitbox', (e) => {
       map.getCanvas().style.cursor = 'pointer';
-      // 마우스 반경 내 중첩된 코스 개수 파악
       const bbox = [[e.point.x - 6, e.point.y - 6], [e.point.x + 6, e.point.y + 6]];
       const rendered = map.queryRenderedFeatures(bbox, { layers: ['routes-hitbox'] });
-      const uniqueMap = new Map();
+      const uniqueIds = new Set();
       rendered.forEach(rf => {
         const fid = rf.id !== undefined ? rf.id : rf.properties.id;
-        if (!uniqueMap.has(fid)) uniqueMap.set(fid, rf);
+        if (fid !== undefined) uniqueIds.add(fid);
       });
 
-      const feature = e.features[0];
-      hoveredLineId = feature.id !== undefined ? feature.id : feature.properties.id;
+      // 만약 현재 재생 중인 코스가 마우스 아래에 포함되어 있다면, 호버 안내도 현재 재생 코스를 우선 표시
+      let targetHoverId = null;
+      if (activeLineId !== null && uniqueIds.has(activeLineId)) {
+        targetHoverId = activeLineId;
+      } else {
+        const firstFeat = e.features[0];
+        targetHoverId = firstFeat.id !== undefined ? firstFeat.id : firstFeat.properties.id;
+      }
+
+      hoveredLineId = targetHoverId;
       updateHoverHighlight(hoveredLineId);
 
-      const props = feature.properties || {};
+      const origFeat = rawGeojsonData.features[hoveredLineId] || e.features[0];
+      const props = origFeat.properties || {};
       const title = props.name || props.Name || '도보 코스';
-      const origFeat = rawGeojsonData.features[hoveredLineId] || feature;
       const globalId = origFeat._globalId || (hoveredLineId + 1);
       const locTag = formatLocationTag(props);
-      const overlapBadge = uniqueMap.size > 1 ? `<br><span style="color:#ffe600; font-size:11px;">⚡ 이 지점에 겹친 코스 ${uniqueMap.size}개 (클릭하여 선택)</span>` : '';
 
-      hoverPopup.setLngLat(e.lngLat).setHTML(`<strong>${globalId}. ${title}</strong>${locTag ? '<br><span style="color:#aaa; font-size:11px;">' + locTag + '</span>' : ''}${overlapBadge}`).addTo(map);
+      let subNotice = '';
+      if (activeLineId !== null && hoveredLineId === activeLineId && isClickSeekEnabled) {
+        const hoverRatio = calculateClickRatioOnFeature(origFeat, e.lngLat);
+        const pct = Math.round(hoverRatio * 100);
+        subNotice = `<br><span style="color:#00ffff; font-size:11px;">🎯 클릭 시 이 지점(${pct}%)부터 즉시 재생</span>`;
+      } else if (uniqueIds.size > 1) {
+        subNotice = `<br><span style="color:#ffe600; font-size:11px;">⚡ 이 지점에 겹친 코스 ${uniqueIds.size}개 (클릭하여 선택)</span>`;
+      } else {
+        const hoverRatio = calculateClickRatioOnFeature(origFeat, e.lngLat);
+        const pct = Math.round(hoverRatio * 100);
+        subNotice = `<br><span style="color:#00ffff; font-size:11px;">▶️ 클릭 시 이 지점(${pct}%)부터 재생</span>`;
+      }
+
+      hoverPopup.setLngLat(e.lngLat).setHTML(`<strong>${globalId}. ${title}</strong>${locTag ? '<br><span style="color:#aaa; font-size:11px;">' + locTag + '</span>' : ''}${subNotice}`).addTo(map);
     });
 
     map.on('mouseleave', 'routes-hitbox', () => {
@@ -1334,7 +1396,10 @@
       hoverPopup.remove();
     });
 
-    // 지도 클릭 이벤트: 1) 현재 활성 노선 클릭 시 구간 점프(Seek), 2) 중복 경로 클릭 시 팝업 표시
+    // 지도 클릭 이벤트:
+    // 1) 이미 선택된(activeLine) 노선 위를 클릭한 경우 -> 다른 노선과 겹쳐 있더라도 팝업 없이 무조건 해당 위치로 영상 시간 이동(Seek) 최우선!
+    // 2) 선택되지 않은 새로운 곳을 클릭했는데 2개 이상 겹쳐 있는 경우 -> 노선 선택 팝업 표시 (선택 시 클릭했던 그 지점 시간부터 재생)
+    // 3) 선택되지 않은 단일 노선을 클릭한 경우 -> 클릭한 지점 시간부터 즉시 재생
     map.on('click', 'routes-hitbox', (e) => {
       const bbox = [[e.point.x - 7, e.point.y - 7], [e.point.x + 7, e.point.y + 7]];
       const rendered = map.queryRenderedFeatures(bbox, { layers: ['routes-hitbox'] });
@@ -1349,44 +1414,90 @@
         }
       });
 
-      // 이미 재생 중인 단독 코스를 다시 클릭했고 클릭이동(Seek)이 켜져 있다면 해당 지점 시간으로 점프
-      if (isClickSeekEnabled && activeLine && uniqueIds.length === 1 && uniqueIds[0] === activeLineId && currentCleanLineTurf && currentLineLengthKm > 0) {
-        try {
-          const clickedPt = turf.point([e.lngLat.lng, e.lngLat.lat]);
-          const snapped = turf.nearestPointOnLine(currentCleanLineTurf, clickedPt, { units: 'kilometers' });
-          if (snapped && snapped.properties && typeof snapped.properties.location === 'number') {
-            const ratio = Math.min(1, Math.max(0, snapped.properties.location / currentLineLengthKm));
-            if (playerReady && player && typeof player.getDuration === 'function') {
-              const dur = player.getDuration();
-              if (dur > 0) player.seekTo(dur * ratio, true);
-            }
-          }
-        } catch (err) {}
+      if (uniqueIds.length === 0) return;
+
+      // 겹친 다른 코스들이 있으면 플레이어 툴바의 '겹친 다른 코스' 전환 버튼 상태 업데이트
+      updateOverlapSwitchButton(e.lngLat, uniqueIds);
+
+      // [우선순위 1] 현재 활성화된 코스(activeLineId)가 클릭 지점에 포함되어 있고 클릭이동(Seek)이 켜져 있다면 -> 즉시 시간 이동!
+      if (isClickSeekEnabled && activeLine && uniqueIds.includes(activeLineId) && currentCleanLineTurf && currentLineLengthKm > 0) {
+        if (activeOverlapPopup) { activeOverlapPopup.remove(); activeOverlapPopup = null; }
+        seekActiveRouteToLngLat(e.lngLat);
         return;
       }
 
-      // 겹친 코스가 2개 이상이면 다중 선택 팝업 표시
+      // [우선순위 2] 현재 활성 코스가 아닌 곳을 눌렀는데 2개 이상 겹친 구간이라면 -> 선택 팝업 띄우기
       if (uniqueIds.length > 1) {
         showOverlapSelectionPopup(e.lngLat, uniqueIds);
-      } else if (uniqueIds.length === 1) {
+      } else {
+        // [우선순위 3] 단일 신규 코스 클릭 -> 클릭한 지점(e.lngLat)의 시간대부터 즉시 영상 재생!
         const targetFeature = rawGeojsonData.features.find(f => f.id === uniqueIds[0]);
-        if (targetFeature) playRouteFeature(targetFeature);
+        if (targetFeature) {
+          playRouteFeature(targetFeature, e.lngLat);
+        }
       }
     });
   });
 
-  // 강남대로 등 중복 경로 다중 선택 팝업
+  // 현재 재생 중인 코스를 클릭한 좌표(lngLat) 시간대로 즉시 이동
+  function seekActiveRouteToLngLat(lngLat) {
+    if (!activeLine || !currentCleanLineTurf || currentLineLengthKm <= 0) return;
+    try {
+      const clickedPt = turf.point([lngLat.lng, lngLat.lat]);
+      const snapped = turf.nearestPointOnLine(currentCleanLineTurf, clickedPt, { units: 'kilometers' });
+      if (snapped && snapped.properties && typeof snapped.properties.location === 'number') {
+        const ratio = Math.min(1, Math.max(0, snapped.properties.location / currentLineLengthKm));
+        if (walkerMarker && snapped.geometry && snapped.geometry.coordinates) {
+          walkerMarker.setLngLat(snapped.geometry.coordinates);
+        }
+        if (playerReady && player && typeof player.getDuration === 'function') {
+          const dur = player.getDuration();
+          if (dur > 0) {
+            player.seekTo(dur * ratio, true);
+          } else {
+            pendingSeekRatio = ratio;
+          }
+        } else {
+          pendingSeekRatio = ratio;
+        }
+      }
+    } catch (err) {}
+  }
+
+  // 현재 클릭한 지점에 다른 중복 코스가 있을 경우, 지도 클릭을 방해하지 않고 플레이어 툴바 버튼으로 안내
+  function updateOverlapSwitchButton(lngLat, uniqueIds) {
+    const btn = document.getElementById('btn-overlap-switch');
+    if (!btn) return;
+    if (uniqueIds && uniqueIds.length > 1) {
+      lastOverlapInfo = { lngLat, ids: uniqueIds };
+      btn.style.display = 'inline-flex';
+      btn.innerText = `📑 겹친 코스(${uniqueIds.length})`;
+    } else {
+      lastOverlapInfo = null;
+      btn.style.display = 'none';
+    }
+  }
+
+  function reopenOverlapPopup() {
+    if (!lastOverlapInfo) return;
+    showOverlapSelectionPopup(lastOverlapInfo.lngLat, lastOverlapInfo.ids);
+  }
+
+  // 중복 경로 다중 선택 팝업 (선택 시에도 처음 클릭했던 지점의 시간대부터 재생!)
   function showOverlapSelectionPopup(lngLat, featureIds) {
     if (activeOverlapPopup) activeOverlapPopup.remove();
 
+    lastOverlapInfo = { lngLat, ids: featureIds };
     const itemsHtml = featureIds.map(fid => {
       const f = rawGeojsonData.features.find(item => item.id === fid);
       if (!f) return '';
       const p = f.properties || {};
       const title = p.name || p.Name || '도보 코스';
+      const ratio = calculateClickRatioOnFeature(f, lngLat);
+      const pct = Math.round(ratio * 100);
       const isCurrent = (fid === activeLineId) ? 'style="border:1px solid #ffe600;"' : '';
-      return `<div class="overlap-item" ${isCurrent} onclick="selectFromOverlapPopup(${fid})">
-        <strong>#${f._globalId}</strong> ${title}
+      return `<div class="overlap-item" ${isCurrent} onclick="selectFromOverlapPopup(${fid}, ${lngLat.lng}, ${lngLat.lat})">
+        <strong>#${f._globalId}</strong> ${title} <span style="color:#00ffff; font-size:10.5px;">(${pct}% 지점)</span>
       </div>`;
     }).join('');
 
@@ -1401,12 +1512,16 @@
       .addTo(map);
   }
 
-  window.selectFromOverlapPopup = function(featureId) {
+  window.selectFromOverlapPopup = function(featureId, lng, lat) {
     if (activeOverlapPopup) {
       activeOverlapPopup.remove();
       activeOverlapPopup = null;
     }
-    playRouteById(featureId);
+    const feature = rawGeojsonData.features.find(f => f.id === featureId);
+    if (feature) {
+      const clickLngLat = (typeof lng === 'number' && typeof lat === 'number') ? { lng, lat } : null;
+      playRouteFeature(feature, clickLngLat);
+    }
   };
 
   function openRouteFromUrl() {
@@ -1419,20 +1534,19 @@
       return String(p.code || '').trim().toLowerCase() === routeCode.trim().toLowerCase();
     });
 
-    if (feature) playRouteFeature(feature);
+    if (feature) playRouteFeature(feature, null);
   }
 
-  function playRouteFeature(feature) {
+  // 코스를 실행할 때 clickedLngLat이 전달되면 해당 위치의 시간대부터 즉시 재생!
+  function playRouteFeature(feature, clickedLngLat = null) {
+    const isSameFeature = (activeLine && activeLine.id === feature.id);
     activeLine = feature;
     activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
-    isReversedDirection = false;
-    document.getElementById('btn-reverse-dir').classList.remove('active');
 
     const props = activeLine.properties || {};
     const videoId = activeLine._youtubeId || extractYouTubeIdFromFeature(activeLine);
     activeLine._youtubeId = videoId || null;
 
-    // URL 주소창 파라미터 실시간 갱신 (딥링크)
     if (props.code) {
       const newUrl = `${window.location.pathname}?route=${encodeURIComponent(props.code)}`;
       window.history.replaceState({ path: newUrl }, '', newUrl);
@@ -1441,21 +1555,29 @@
     const globalId = activeLine._globalId || (activeLine.id !== undefined ? activeLine.id + 1 : '');
     const title = `${globalId}. ${props.name || props.Name || '도보 코스'}`;
 
+    // 클릭한 좌표가 있으면 노선 상의 진행 비율(0.0~1.0) 계산
+    const initialRatio = (clickedLngLat && isClickSeekEnabled) ? calculateClickRatioOnFeature(activeLine, clickedLngLat) : 0;
+
     updateHoverHighlight(null);
     updateActiveRouteHighlight(activeLineId);
-    setupRouteMarkers(activeLine);
+    setupRouteMarkers(activeLine, initialRatio);
 
     document.getElementById('video-title').innerText = videoId ? title : `${title} (영상 연결 정보 없음)`;
     document.getElementById('player-panel').style.display = 'flex';
 
-    if (currentMode === 'map') {
+    // 지도를 클릭해서 들어온 경우가 아닐 때(리스트 클릭, URL 진입 등)만 전체 노선으로 줌핏
+    if (currentMode === 'map' && !clickedLngLat) {
       zoomToActiveLine();
-    } else {
+    } else if (currentMode === 'list') {
       renderRouteList();
     }
 
     if (videoId) {
-      loadRouteVideo(videoId);
+      if (isSameFeature && playerReady && player && typeof player.getDuration === 'function' && player.getDuration() > 0) {
+        player.seekTo(player.getDuration() * initialRatio, true);
+      } else {
+        loadRouteVideo(videoId, initialRatio);
+      }
     } else if (player && playerReady && typeof player.stopVideo === 'function') {
       try { player.stopVideo(); } catch (e) {}
     }
@@ -1473,6 +1595,7 @@
     if (isSplitMode && currentMode === 'map') toggleSplitMode();
 
     pendingVideoId = null;
+    pendingSeekRatio = null;
     if (playerReady && player && typeof player.stopVideo === 'function') {
       player.stopVideo();
     }
@@ -1483,6 +1606,7 @@
     updateActiveRouteHighlight(null);
     updateHoverHighlight(null);
     document.getElementById('nearby-box').style.display = 'none';
+    document.getElementById('btn-overlap-switch').style.display = 'none';
     window.history.replaceState({}, '', window.location.pathname);
 
     document.getElementById('video-title').innerText = "코스 명칭";
@@ -1573,7 +1697,6 @@
       const yr = extractYear(f);
       if (yr && !selectedYears.has(yr)) return false;
 
-      // 테마 필터 확인 (하나라도 일치하면 통과)
       if (selectedThemes.size < THEME_DEFINITIONS.length) {
         let hasTheme = false;
         if (f._themes) {
@@ -1623,7 +1746,7 @@
   function playRouteById(featureId) {
     if (!rawGeojsonData || !Array.isArray(rawGeojsonData.features)) return;
     const feature = rawGeojsonData.features.find(f => f.id === featureId);
-    if (feature) playRouteFeature(feature);
+    if (feature) playRouteFeature(feature, null);
   }
 
   function renderRouteList() {
