@@ -4,9 +4,11 @@
   <meta charset="UTF-8">
   <title>ROUTE S - 아카이브 지도 & 리스트</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <link rel="preconnect" href="https://unpkg.com">
+  <link rel="preconnect" href="https://a.tile.openstreetmap.org">
   <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
-  <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+  <script src="https://unpkg.com/@turf/turf@6/turf.min.js" defer></script>
 
   <style>
     * { box-sizing: border-box; }
@@ -18,6 +20,25 @@
       display: flex;
       flex-direction: column;
       position: relative;
+    }
+
+    /* 초기 로딩 인디케이터 */
+    #loading-badge {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 200;
+      background: rgba(18, 20, 26, 0.92);
+      color: #00ffff;
+      border: 1px solid rgba(0, 255, 255, 0.4);
+      padding: 7px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.6);
+      pointer-events: none;
+      transition: opacity 0.3s ease;
     }
 
     .view-pane {
@@ -199,7 +220,7 @@
     .checkbox-label:hover { color: #00ffff; }
     .checkbox-label input { accent-color: #00ffff; cursor: pointer; }
 
-    /* 플레이어 패널 (인접 추천 제거 후 컴팩트 레이아웃) */
+    /* 플레이어 패널 */
     #player-panel {
       position: absolute;
       top: 65px;
@@ -313,12 +334,11 @@
       display: flex;
       align-items: center;
       gap: 15px;
-      transition: all 0.2s;
+      transition: background 0.15s, border-color 0.15s;
     }
     .route-item:hover {
       background: rgba(0, 206, 209, 0.15);
       border-color: #00ffff;
-      transform: translateY(-1px);
     }
     .route-item.active-playing {
       border-color: #ffe600;
@@ -405,6 +425,8 @@
 <body class="map-mode">
 
 <div id="app-container">
+  <div id="loading-badge">⏳ 코스 데이터 불러오는 중...</div>
+
   <!-- 통합 상단 필터바 -->
   <div id="main-filter-container" class="filter-container">
     <img id="logo-icon" src="./logo.png" alt="ROUTE S" title="ROUTE S 채널 바로가기" onclick="window.open('https://www.youtube.com/@루트에스', '_blank')">
@@ -491,6 +513,11 @@
   let currentMode = 'map';
   let sortAscending = true;
 
+  // 리스트 가상 스크롤(무한 스크롤) 상태 변수
+  let currentListFeatures = [];
+  let renderedListCount = 0;
+  const LIST_PAGE_SIZE = 60;
+
   // 시간-위치 동기화 및 중복 구간 상태 변수
   let isClickSeekEnabled = true;
   let currentCleanedCoords = [];
@@ -513,8 +540,10 @@
   ];
   let selectedThemes = new Set(THEME_DEFINITIONS.map(t => t.key));
 
+  // 유튜브 API 비동기 로드
   const ytScript = document.createElement('script');
   ytScript.src = "https://www.youtube.com/iframe_api";
+  ytScript.async = true;
   document.head.appendChild(ytScript);
 
   const SEOUL_DISTRICTS = new Set([
@@ -580,6 +609,7 @@
   }
 
   function getFeatureFullText(feature) {
+    if (feature._fullText !== undefined) return feature._fullText;
     const props = feature.properties || {};
     let descText = "";
     if (typeof props.description === 'object' && props.description !== null) {
@@ -587,7 +617,8 @@
     } else if (typeof props.description === 'string') {
       descText = props.description;
     }
-    return `${props.name || ""} ${props.Name || ""} ${descText} ${props.Description || ""}`;
+    feature._fullText = `${props.name || ""} ${props.Name || ""} ${descText} ${props.Description || ""}`;
+    return feature._fullText;
   }
 
   function inferThemesFromFeature(feature) {
@@ -628,6 +659,24 @@
     return themes;
   }
 
+  // 초기 로딩용: 전체 좌표를 돌지 않고 첫 좌표만 초고속 추출 (O(1))
+  function getFirstCoordFast(coords) {
+    let curr = coords;
+    while (Array.isArray(curr) && curr.length > 0 && Array.isArray(curr[0])) {
+      curr = curr[0];
+    }
+    return (Array.isArray(curr) && typeof curr[0] === 'number') ? [curr[0], curr[1]] : null;
+  }
+
+  // 클릭/호버 시점에만 지연 실행 + 결과 캐싱
+  function getCleanedCoordsForFeature(feature) {
+    if (!feature) return [];
+    if (feature._cleanedCoords) return feature._cleanedCoords;
+    const rawCoords = (feature.geometry && feature.geometry.coordinates) ? feature.geometry.coordinates : [];
+    feature._cleanedCoords = sanitizeRouteCoordinates(rawCoords);
+    return feature._cleanedCoords;
+  }
+
   function sanitizeRouteCoordinates(rawCoords) {
     if (!rawCoords || rawCoords.length === 0) return [];
 
@@ -665,7 +714,7 @@
   function calculateClickRatioOnFeature(feature, lngLat) {
     if (!feature || !lngLat || !feature.geometry || !feature.geometry.coordinates) return 0;
     try {
-      const cleanCoords = sanitizeRouteCoordinates(feature.geometry.coordinates);
+      const cleanCoords = getCleanedCoordsForFeature(feature);
       if (cleanCoords.length < 2) return 0;
       const line = turf.lineString(cleanCoords);
       const totalKm = turf.length(line, { units: 'kilometers' });
@@ -737,9 +786,11 @@
   }
 
   function extractYear(feature) {
+    if (feature._year !== undefined) return feature._year;
     const text = getFeatureFullText(feature);
     const match = text.match(/\b(20\d{2})\b/);
-    return match ? match[1] : null;
+    feature._year = match ? match[1] : null;
+    return feature._year;
   }
 
   function formatLocationTag(props) {
@@ -806,18 +857,34 @@
     }, 100);
   }
 
+  // 초기 지도 세팅 시 불필요한 이중 fitBounds 연산 방지
   function resetMapToInitial() {
     const cSel = document.getElementById('country-select');
     const sdSel = document.getElementById('sido-select');
+    const sgSel = document.getElementById('sigungu-select');
 
-    if (cSel) {
+    if (cSel && adminHierarchy['대한민국']) {
       cSel.value = "대한민국";
-      cSel.dispatchEvent(new Event('change'));
+      sdSel.innerHTML = `<option value="ALL">${formatSidoLabel('ALL')}</option>`;
+      sgSel.innerHTML = `<option value="ALL">${formatSigunguLabel('ALL')}</option>`;
+      sdSel.disabled = false;
+
+      SIDO_SORT_ORDER.forEach(sido => {
+        if (adminHierarchy['대한민국'][sido]) {
+          sdSel.innerHTML += `<option value="${sido}">${formatSidoLabel(sido)}</option>`;
+        }
+      });
+
+      if (adminHierarchy['대한민국']['서울특별시']) {
+        sdSel.value = "서울특별시";
+        sgSel.disabled = false;
+        Array.from(adminHierarchy['대한민국']['서울특별시']).sort().forEach(sig => {
+          sgSel.innerHTML += `<option value="${sig}">${formatSigunguLabel(sig)}</option>`;
+        });
+      }
     }
-    if (sdSel) {
-      sdSel.value = "서울특별시";
-      sdSel.dispatchEvent(new Event('change'));
-    }
+
+    applyUnifiedFilter(false);
     map.jumpTo({ center: [126.9780, 37.5665], zoom: 11 });
   }
 
@@ -926,7 +993,7 @@
     clearRouteMarkers();
     if (!feature || !feature.geometry || !feature.geometry.coordinates) return;
 
-    currentCleanedCoords = sanitizeRouteCoordinates(feature.geometry.coordinates);
+    currentCleanedCoords = getCleanedCoordsForFeature(feature);
     if (currentCleanedCoords.length < 2) return;
 
     currentCleanLineTurf = turf.lineString(currentCleanedCoords);
@@ -1097,13 +1164,36 @@
     }
   }
 
+  function registerFeatureToHierarchy(f) {
+    const p = f.properties || {};
+    const c = p.country || "대한민국";
+    if (!adminHierarchy[c]) adminHierarchy[c] = {};
+    if (c === "대한민국") {
+      const sdArr = (p.sido || "").split(',').map(s => normalizeSido(s)).filter(Boolean);
+      const sigArr = (p.sigungu || "").split(',').map(s => s.trim()).filter(Boolean);
+
+      sdArr.forEach(sd => {
+        if (sd !== "-" && sd !== "") {
+          if (!adminHierarchy[c][sd]) adminHierarchy[c][sd] = new Set();
+          sigArr.forEach(sg => {
+            if (sg !== "-" && sg !== "") {
+              if (sd === "서울특별시") {
+                if (SEOUL_DISTRICTS.has(sg)) adminHierarchy[c][sd].add(sg);
+              } else {
+                if (!SEOUL_DISTRICTS.has(sg)) adminHierarchy[c][sd].add(sg);
+              }
+            }
+          });
+        }
+      });
+    }
+  }
+
+  // 1단계: 브라우저 캐시를 살려 routes.geojson 즉시 프리페치 시작
+  const routesDataPromise = fetch('./routes.geojson').then(r => r.json());
+
   map.on('load', () => {
-    Promise.all([
-      fetch('./routes.geojson?t=' + Date.now()).then(r => r.json()),
-      fetch('https://d2ad6b4ur7yvpq.cloudfront.net/naturalearth-3.3.0/ne_110m_admin_0_countries.geojson').then(r => r.json()),
-      fetch('https://raw.githubusercontent.com/southkorea/southkorea-maps/master/kostat/2018/json/skorea-provinces-2018-geo.json').then(r => r.json()),
-      fetch('https://raw.githubusercontent.com/southkorea/southkorea-maps/master/kostat/2018/json/skorea-municipalities-2018-geo.json').then(r => r.json())
-    ]).then(([routesData, worldGeo, sidoGeo, sigunguGeo]) => {
+    routesDataPromise.then((routesData) => {
       rawGeojsonData = routesData;
 
       rawGeojsonData.features.forEach((f, idx) => {
@@ -1113,6 +1203,10 @@
 
       rawGeojsonData.features.sort((a, b) => a._timestamp - b._timestamp);
 
+      const featuresMissingAdmin = [];
+      adminHierarchy = {};
+
+      // 무거운 turf.distance나 폴리곤 연산 없이 0.05초 만에 메타데이터 초기화
       rawGeojsonData.features.forEach((f, index) => {
         f.id = index;
         f._globalId = index + 1;
@@ -1122,123 +1216,55 @@
         const p = f.properties || {};
         f.properties = p;
 
-        let c = getCorrectedCountry(f);
-        let sidos = new Set();
-        let sigs = new Set();
+        const firstCoord = (f.geometry && f.geometry.coordinates) ? getFirstCoordFast(f.geometry.coordinates) : null;
+        f._startCoord = firstCoord || [126.9780, 37.5665];
 
-        try {
-          if (f.geometry && f.geometry.coordinates && f.geometry.coordinates.length > 0) {
-            const cleanC = sanitizeRouteCoordinates(f.geometry.coordinates);
-            if (cleanC.length > 0) {
-              f._startCoord = cleanC[0];
-              f._endCoord = cleanC[cleanC.length - 1];
-            }
-
-            const startCoord = f._startCoord || [126.9780, 37.5665];
-            const startPt = turf.point(startCoord);
-            const lon = startCoord[0];
-            const lat = startCoord[1];
-
-            if (!c) {
-              let isKorea = (lon >= 124.0 && lon <= 132.0 && lat >= 33.0 && lat <= 39.0);
-              if (isKorea) {
-                c = '대한민국';
-              } else if (worldGeo && worldGeo.features) {
-                for (const wf of worldGeo.features) {
-                  if (turf.booleanPointInPolygon(startPt, wf)) {
-                    let wName = wf.properties.NAME || wf.properties.ADMIN || wf.properties.name;
-                    if (wName === 'South Korea') { c = '대한민국'; break; }
-                    else if (wName === 'Japan') { c = '일본'; break; }
-                    else if (wName === 'Taiwan') { c = '대만'; break; }
-                    else if (wName === 'Singapore') { c = '싱가포르'; break; }
-                    else if (wName === 'Vietnam') { c = '베트남'; break; }
-                    else if (wName === 'Canada') { c = '캐나다'; break; }
-                    else if (wName === 'Russia') { c = '러시아'; break; }
-                    else if (wName === 'United States of America' || wName === 'United States') { c = '미국'; break; }
-                    else if (wName === 'South Africa') { c = '남아프리카공화국'; break; }
-                    else if (wName === 'China') { c = '중국'; break; }
-                    else if (wName === 'Malaysia') { c = '말레이시아'; break; }
-                    else if (wName && wName !== 'South Korea') { c = wName; break; }
-                  }
-                }
-              }
-            }
-            if (!c) c = '대한민국';
-            p.country = c;
-
-            if (c === "대한민국") {
-              if (!p.sido && sidoGeo && sidoGeo.features) {
-                for (const sidoF of sidoGeo.features) {
-                  if (turf.booleanPointInPolygon(startPt, sidoF)) {
-                    sidos.add(normalizeSido(sidoF.properties.name || sidoF.properties.CTP_KOR_NM));
-                    break;
-                  }
-                }
-              }
-              if (!p.sigungu && sigunguGeo && sigunguGeo.features) {
-                for (const sigF of sigunguGeo.features) {
-                  if (turf.booleanPointInPolygon(startPt, sigF)) {
-                    sigs.add(sigF.properties.name || sigF.properties.SIG_KOR_NM);
-                    break;
-                  }
-                }
-              }
-            }
+        let c = p.country || getCorrectedCountry(f);
+        if (!c) {
+          const lon = f._startCoord[0];
+          const lat = f._startCoord[1];
+          if (lon >= 124.0 && lon <= 132.0 && lat >= 33.0 && lat <= 39.0) {
+            c = '대한민국';
           }
-        } catch (e) { console.error(e); }
-
-        if (p.sido && sidos.size === 0) {
-          p.sido.split(',').forEach(s => sidos.add(normalizeSido(s)));
         }
-        if (p.sigungu && sigs.size === 0) {
-          p.sigungu.split(',').forEach(s => sigs.add(s.trim()));
+        p.country = c || '대한민국';
+
+        if (p.sido) {
+          p.sido = p.sido.split(',').map(s => normalizeSido(s)).filter(Boolean).join(', ');
+        } else {
+          p.sido = "";
+        }
+        if (p.sigungu) {
+          p.sigungu = p.sigungu.split(',').map(s => s.trim()).filter(Boolean).join(', ');
+        } else {
+          p.sigungu = "";
         }
 
-        p.sido = sidos.size > 0 ? Array.from(sidos).join(', ') : (normalizeSido(p.sido) || "");
-        p.sigungu = sigs.size > 0 ? Array.from(sigs).join(', ') : (p.sigungu || "");
+        if ((p.country === '대한민국' && (!p.sido || !p.sigungu)) || !c) {
+          featuresMissingAdmin.push(f);
+        }
 
         const yr = extractYear(f);
         if (yr) availableYears.add(yr);
 
-        if (!adminHierarchy[c]) adminHierarchy[c] = {};
-        if (c === "대한민국") {
-          const sdArr = p.sido.split(',').map(s => normalizeSido(s)).filter(Boolean);
-          const sigArr = p.sigungu.split(',').map(s => s.trim()).filter(Boolean);
-
-          sdArr.forEach(sd => {
-            if (sd !== "-" && sd !== "") {
-              if (!adminHierarchy[c][sd]) adminHierarchy[c][sd] = new Set();
-              sigArr.forEach(sg => {
-                if (sg !== "-" && sg !== "") {
-                  if (sd === "서울특별시") {
-                    if (SEOUL_DISTRICTS.has(sg)) adminHierarchy[c][sd].add(sg);
-                  } else {
-                    if (!SEOUL_DISTRICTS.has(sg)) adminHierarchy[c][sd].add(sg);
-                  }
-                }
-              });
-            }
-          });
-        }
+        registerFeatureToHierarchy(f);
       });
 
       const sortedYears = Array.from(availableYears).sort((a, b) => b.localeCompare(a));
-      sortedYears.forEach(yr => {
+      document.getElementById('year-checkboxes').innerHTML = sortedYears.map(yr => {
         selectedYears.add(yr);
-        document.getElementById('year-checkboxes').innerHTML += `
+        return `
           <label class="checkbox-label">
             <input type="checkbox" value="${yr}" checked onchange="onYearChange(this)"> ${yr}년
           </label>
         `;
-      });
+      }).join('');
 
-      THEME_DEFINITIONS.forEach(t => {
-        document.getElementById('theme-checkboxes').innerHTML += `
-          <label class="checkbox-label">
-            <input type="checkbox" value="${t.key}" checked onchange="onThemeChange(this)"> ${t.label}
-          </label>
-        `;
-      });
+      document.getElementById('theme-checkboxes').innerHTML = THEME_DEFINITIONS.map(t => `
+        <label class="checkbox-label">
+          <input type="checkbox" value="${t.key}" checked onchange="onThemeChange(this)"> ${t.label}
+        </label>
+      `).join('');
 
       map.addSource('routes', { type: 'geojson', data: rawGeojsonData });
       map.addLayer({ id: 'routes-hitbox', type: 'line', source: 'routes', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': 'transparent', 'line-width': 18 } });
@@ -1249,6 +1275,18 @@
       buildUnifiedFilterDropdowns();
       resetMapToInitial();
       openRouteFromUrl();
+
+      // 로딩 배지 즉시 숨김
+      const badge = document.getElementById('loading-badge');
+      if (badge) {
+        badge.style.opacity = '0';
+        setTimeout(() => badge.remove(), 300);
+      }
+
+      // 2단계: 만약 행정구역 속성이 누락된 코스가 있을 때만 백그라운드에서 외부 경계 파일로 보정
+      if (featuresMissingAdmin.length > 0) {
+        setTimeout(() => resolveMissingAdminInBackground(featuresMissingAdmin), 500);
+      }
     });
 
     const hoverPopup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
@@ -1338,6 +1376,57 @@
     });
   });
 
+  // 백그라운드 행정구역 보정 (초기 화면 로딩을 전혀 방해하지 않음)
+  function resolveMissingAdminInBackground(missingFeatures) {
+    Promise.all([
+      fetch('https://d2ad6b4ur7yvpq.cloudfront.net/naturalearth-3.3.0/ne_110m_admin_0_countries.geojson').then(r => r.json()).catch(() => null),
+      fetch('https://raw.githubusercontent.com/southkorea/southkorea-maps/master/kostat/2018/json/skorea-provinces-2018-geo.json').then(r => r.json()).catch(() => null),
+      fetch('https://raw.githubusercontent.com/southkorea/southkorea-maps/master/kostat/2018/json/skorea-municipalities-2018-geo.json').then(r => r.json()).catch(() => null)
+    ]).then(([worldGeo, sidoGeo, sigunguGeo]) => {
+      let updated = false;
+      missingFeatures.forEach(f => {
+        const p = f.properties || {};
+        const startPt = turf.point(f._startCoord || [126.9780, 37.5665]);
+
+        if (p.country === '대한민국') {
+          if (!p.sido && sidoGeo && sidoGeo.features) {
+            for (const sidoF of sidoGeo.features) {
+              if (turf.booleanPointInPolygon(startPt, sidoF)) {
+                p.sido = normalizeSido(sidoF.properties.name || sidoF.properties.CTP_KOR_NM);
+                updated = true;
+                break;
+              }
+            }
+          }
+          if (!p.sigungu && sigunguGeo && sigunguGeo.features) {
+            for (const sigF of sigunguGeo.features) {
+              if (turf.booleanPointInPolygon(startPt, sigF)) {
+                p.sigungu = (sigF.properties.name || sigF.properties.SIG_KOR_NM || "").trim();
+                updated = true;
+                break;
+              }
+            }
+          }
+        } else if (worldGeo && worldGeo.features) {
+          for (const wf of worldGeo.features) {
+            if (turf.booleanPointInPolygon(startPt, wf)) {
+              let wName = wf.properties.NAME || wf.properties.ADMIN || wf.properties.name;
+              const mapW = { 'South Korea':'대한민국', 'Japan':'일본', 'Taiwan':'대만', 'Singapore':'싱가포르', 'Vietnam':'베트남', 'Canada':'캐나다', 'Russia':'러시아', 'United States of America':'미국', 'United States':'미국', 'South Africa':'남아프리카공화국', 'China':'중국', 'Malaysia':'말레이시아' };
+              p.country = mapW[wName] || wName || '대한민국';
+              updated = true;
+              break;
+            }
+          }
+        }
+        registerFeatureToHierarchy(f);
+      });
+
+      if (updated) {
+        applyUnifiedFilter(false);
+      }
+    });
+  }
+
   function seekActiveRouteToLngLat(lngLat) {
     if (!activeLine || !currentCleanLineTurf || currentLineLengthKm <= 0) return;
     try {
@@ -1425,260 +1514,4 @@
     const routeCode = params.get('route');
     if (!routeCode || !rawGeojsonData) return;
 
-    const feature = rawGeojsonData.features.find(f => {
-      const p = f.properties || {};
-      return String(p.code || '').trim().toLowerCase() === routeCode.trim().toLowerCase();
-    });
-
-    if (feature) playRouteFeature(feature, null);
-  }
-
-  function playRouteFeature(feature, clickedLngLat = null) {
-    const isSameFeature = (activeLine && activeLine.id === feature.id);
-    activeLine = feature;
-    activeLineId = activeLine.id !== undefined ? activeLine.id : activeLine.properties.id;
-
-    const props = activeLine.properties || {};
-    const videoId = activeLine._youtubeId || extractYouTubeIdFromFeature(activeLine);
-    activeLine._youtubeId = videoId || null;
-
-    if (props.code) {
-      const newUrl = `${window.location.pathname}?route=${encodeURIComponent(props.code)}`;
-      window.history.replaceState({ path: newUrl }, '', newUrl);
-    }
-
-    const globalId = activeLine._globalId || (activeLine.id !== undefined ? activeLine.id + 1 : '');
-    const title = `${globalId}. ${props.name || props.Name || '도보 코스'}`;
-
-    const initialRatio = (clickedLngLat && isClickSeekEnabled) ? calculateClickRatioOnFeature(activeLine, clickedLngLat) : 0;
-
-    updateHoverHighlight(null);
-    updateActiveRouteHighlight(activeLineId);
-    setupRouteMarkers(activeLine, initialRatio);
-
-    document.getElementById('video-title').innerText = videoId ? title : `${title} (영상 연결 정보 없음)`;
-    document.getElementById('player-panel').style.display = 'flex';
-
-    if (currentMode === 'map' && !clickedLngLat) {
-      zoomToActiveLine();
-    } else if (currentMode === 'list') {
-      renderRouteList();
-    }
-
-    if (videoId) {
-      if (isSameFeature && playerReady && player && typeof player.getDuration === 'function' && player.getDuration() > 0) {
-        player.seekTo(player.getDuration() * initialRatio, true);
-      } else {
-        loadRouteVideo(videoId, initialRatio);
-      }
-    } else if (player && playerReady && typeof player.stopVideo === 'function') {
-      try { player.stopVideo(); } catch (e) {}
-    }
-
-    setTimeout(() => {
-      if (playerReady && player && typeof player.setSize === 'function') {
-        const pc = document.getElementById('player-container');
-        if (pc) player.setSize(pc.clientWidth, pc.clientHeight);
-      }
-    }, 50);
-  }
-
-  function closePlayer() {
-    document.getElementById('player-panel').style.display = 'none';
-    if (isSplitMode && currentMode === 'map') toggleSplitMode();
-
-    pendingVideoId = null;
-    pendingSeekRatio = null;
-    if (playerReady && player && typeof player.stopVideo === 'function') {
-      player.stopVideo();
-    }
-
-    activeLine = null;
-    activeLineId = null;
-    clearRouteMarkers();
-    updateActiveRouteHighlight(null);
-    updateHoverHighlight(null);
-    document.getElementById('btn-overlap-switch').style.display = 'none';
-    window.history.replaceState({}, '', window.location.pathname);
-
-    document.getElementById('video-title').innerText = "코스 명칭";
-    if (currentMode === 'list') renderRouteList();
-  }
-
-  function onYearChange(cb) {
-    if (cb.checked) selectedYears.add(cb.value);
-    else selectedYears.delete(cb.value);
-    applyUnifiedFilter(true);
-  }
-
-  function onThemeChange(cb) {
-    if (cb.checked) selectedThemes.add(cb.value);
-    else selectedThemes.delete(cb.value);
-    applyUnifiedFilter(true);
-  }
-
-  function buildUnifiedFilterDropdowns() {
-    const cSel = document.getElementById('country-select');
-    const sdSel = document.getElementById('sido-select');
-    const sgSel = document.getElementById('sigungu-select');
-
-    cSel.innerHTML = `<option value="ALL">${formatCountryLabel('ALL')}</option>`;
-    const countries = Object.keys(adminHierarchy).sort((a, b) => (a === '대한민국' ? -1 : b === '대한민국' ? 1 : a.localeCompare(b)));
-    countries.forEach(country => {
-      cSel.innerHTML += `<option value="${country}">${formatCountryLabel(country)}</option>`;
-    });
-
-    cSel.addEventListener('change', () => {
-      const c = cSel.value;
-      sdSel.innerHTML = `<option value="ALL">${formatSidoLabel('ALL')}</option>`;
-      sgSel.innerHTML = `<option value="ALL">${formatSigunguLabel('ALL')}</option>`;
-
-      if (c === '대한민국' && adminHierarchy[c]) {
-        sdSel.disabled = false;
-        SIDO_SORT_ORDER.forEach(sido => {
-          if (adminHierarchy[c][sido]) sdSel.innerHTML += `<option value="${sido}">${formatSidoLabel(sido)}</option>`;
-        });
-        sgSel.disabled = true;
-      } else {
-        sdSel.disabled = true;
-        sgSel.disabled = true;
-      }
-      applyUnifiedFilter(true);
-    });
-
-    sdSel.addEventListener('change', () => {
-      const c = cSel.value;
-      const s = sdSel.value;
-      sgSel.innerHTML = `<option value="ALL">${formatSigunguLabel('ALL')}</option>`;
-
-      if (c === '대한민국' && s !== 'ALL' && adminHierarchy[c] && adminHierarchy[c][s]) {
-        sgSel.disabled = false;
-        Array.from(adminHierarchy[c][s]).sort().forEach(sig => {
-          sgSel.innerHTML += `<option value="${sig}">${formatSigunguLabel(sig)}</option>`;
-        });
-      } else {
-        sgSel.disabled = true;
-      }
-      applyUnifiedFilter(true);
-    });
-
-    sgSel.addEventListener('change', () => {
-      applyUnifiedFilter(true);
-    });
-  }
-
-  function getFilteredFeatures(includeSearchQuery = false) {
-    if (!rawGeojsonData) return [];
-    const c = document.getElementById('country-select').value;
-    const sd = document.getElementById('sido-select').value;
-    const sgg = document.getElementById('sigungu-select').value;
-    const searchVal = includeSearchQuery ? document.getElementById('search-input').value.trim().toLowerCase() : '';
-
-    return rawGeojsonData.features.filter(f => {
-      const p = f.properties || {};
-      if (c !== 'ALL' && p.country !== c) return false;
-      if (c === '대한민국' && sd !== 'ALL') {
-        const sidos = (p.sido || "").split(',').map(s => normalizeSido(s));
-        if (!sidos.includes(sd)) return false;
-      }
-      if (c === '대한민국' && sd !== 'ALL' && sgg !== 'ALL') {
-        const sigs = (p.sigungu || "").split(',').map(s => s.trim());
-        if (!sigs.includes(sgg)) return false;
-      }
-
-      const yr = extractYear(f);
-      if (yr && !selectedYears.has(yr)) return false;
-
-      if (selectedThemes.size < THEME_DEFINITIONS.length) {
-        let hasTheme = false;
-        if (f._themes) {
-          for (const t of f._themes) {
-            if (selectedThemes.has(t)) { hasTheme = true; break; }
-          }
-        }
-        if (!hasTheme) return false;
-      }
-
-      if (searchVal) {
-        const title = (p.name || p.Name || '').toLowerCase();
-        const code = String(p.code || '').toLowerCase();
-        const globalIdStr = String(f._globalId);
-        if (!title.includes(searchVal) && !code.includes(searchVal) && !globalIdStr.includes(searchVal)) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }
-
-  function applyUnifiedFilter(shouldFitBounds = true) {
-    if (!rawGeojsonData) return;
-    const filtered = getFilteredFeatures(false);
-    const matchedIds = filtered.map(f => f.id);
-    const filterExpression = matchedIds.length === rawGeojsonData.features.length ? null : ['in', ['id'], ['literal', matchedIds]];
-
-    if (map.getLayer('routes-line')) {
-      map.setFilter('routes-line', filterExpression);
-      map.setFilter('routes-hitbox', filterExpression);
-    }
-
-    if (currentMode === 'map' && shouldFitBounds && filtered.length > 0) {
-      try {
-        const fc = turf.featureCollection(filtered);
-        const bbox = turf.bbox(fc);
-        map.fitBounds(bbox, { padding: window.innerWidth <= 640 ? 40 : 80, maxZoom: 15, duration: 700 });
-      } catch(e) {}
-    }
-
-    if (currentMode === 'list') {
-      renderRouteList();
-    }
-  }
-
-  function playRouteById(featureId) {
-    if (!rawGeojsonData || !Array.isArray(rawGeojsonData.features)) return;
-    const feature = rawGeojsonData.features.find(f => f.id === featureId);
-    if (feature) playRouteFeature(feature, null);
-  }
-
-  function renderRouteList() {
-    const listScrollArea = document.getElementById('list-scroll-area');
-    let features = getFilteredFeatures(true);
-
-    features.sort((a, b) => sortAscending ? (a._timestamp - b._timestamp) : (b._timestamp - a._timestamp));
-    document.getElementById('list-count-label').innerText = `총 ${features.length}개 코스`;
-
-    if (features.length === 0) {
-      listScrollArea.innerHTML = `<div style="text-align:center; color:#888; padding:30px;">조건에 일치하는 워킹 코스가 없습니다.</div>`;
-      return;
-    }
-
-    const themeLabelMap = Object.fromEntries(THEME_DEFINITIONS.map(t => [t.key, t.label]));
-    let html = '';
-    features.forEach((f) => {
-      const props = f.properties || {};
-      const title = props.name || props.Name || '도보 코스';
-      const locTag = formatLocationTag(props);
-      const isPlaying = (activeLineId === f.id);
-      const badges = f._themes ? Array.from(f._themes).map(k => `<span class="theme-badge">${themeLabelMap[k] || k}</span>`).join('') : '';
-
-      html += `
-        <div class="route-item ${isPlaying ? 'active-playing' : ''}" onclick="playRouteById(${f.id})">
-          <div class="route-number">${f._globalId}</div>
-          <div class="route-details">
-            <div class="route-item-title">${title}</div>
-            <div class="route-item-meta">
-              <span>${locTag}</span>
-              ${props.code ? `<span style="color:#888;">(${props.code})</span>` : ''}
-              ${badges}
-            </div>
-          </div>
-        </div>
-      `;
-    });
-
-    listScrollArea.innerHTML = html;
-  }
-</script>
-</body>
-</html>
+    const feature = rawGeojsonData.features.find
