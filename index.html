@@ -388,8 +388,13 @@
     .marker-start { width: 20px; height: 20px; background: #00c853; border: 2px solid #fff; }
     .marker-end { width: 20px; height: 20px; background: #ff1744; border: 2px solid #fff; }
     .marker-walker {
-      width: 16px; height: 16px; background: #ff9100; border: 2.5px solid #fff;
-      box-shadow: 0 0 12px #ff9100; transition: transform 0.1s linear;
+      width: 19px; height: 19px; background: #ff9100; border: 2px solid #fff;
+      box-shadow: 0 0 12px #ff9100;
+    }
+    .marker-walker svg {
+      width: 11px;
+      height: 11px;
+      display: block;
     }
 
     @media (max-width: 768px) {
@@ -729,6 +734,63 @@
     return 0;
   }
 
+  // 주황색 원 안에 '>' 화살표 아이콘이 들어간 마커 엘리먼트 생성
+  function createWalkerMarkerElement() {
+    const el = document.createElement('div');
+    el.className = 'route-marker marker-walker';
+    el.innerHTML = `
+      <svg viewBox="0 0 24 24">
+        <path d="M8 5l8 7-8 7" fill="none" stroke="#ffffff" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    `;
+    return el;
+  }
+
+  // 경로 상의 특정 거리(distKm)에서 좌표와 진행 방향(회전 각도)을 동시에 계산
+  function getRoutePoseAtDist(distKm) {
+    if (!currentCleanLineTurf || currentLineLengthKm <= 0) return null;
+    const clampedDist = Math.min(currentLineLengthKm, Math.max(0, distKm));
+    const pt = turf.along(currentCleanLineTurf, clampedDist, { units: 'kilometers' });
+    if (!pt || !pt.geometry || !pt.geometry.coordinates) return null;
+
+    const deltaKm = Math.min(0.008, currentLineLengthKm * 0.05); // 약 8m 앞쪽 방향 참조
+    let p1, p2;
+    if (clampedDist + deltaKm <= currentLineLengthKm) {
+      p1 = pt;
+      p2 = turf.along(currentCleanLineTurf, clampedDist + deltaKm, { units: 'kilometers' });
+    } else {
+      p1 = turf.along(currentCleanLineTurf, Math.max(0, clampedDist - deltaKm), { units: 'kilometers' });
+      p2 = pt;
+    }
+
+    let bearing = 90;
+    if (p1 && p2) {
+      const b = turf.bearing(p1, p2);
+      if (!isNaN(b)) bearing = b;
+    }
+
+    // 기본 SVG('>')가 동쪽(90도)을 향하고 있으므로 (bearing - 90)도로 회전
+    return {
+      coordinates: pt.geometry.coordinates,
+      rotation: bearing - 90
+    };
+  }
+
+  function updateWalkerMarkerPose(distKm) {
+    const pose = getRoutePoseAtDist(distKm);
+    if (!pose) return;
+    if (!walkerMarker) {
+      const el = createWalkerMarkerElement();
+      walkerMarker = new maplibregl.Marker({ element: el, rotationAlignment: 'map' })
+        .setLngLat(pose.coordinates)
+        .setRotation(pose.rotation)
+        .addTo(map);
+    } else {
+      walkerMarker.setLngLat(pose.coordinates);
+      walkerMarker.setRotation(pose.rotation);
+    }
+  }
+
   function formatTimeMMSS(seconds) {
     if (!seconds || isNaN(seconds) || seconds < 0) return "00:00";
     const s = Math.floor(seconds);
@@ -987,20 +1049,11 @@
       const targetDistKm = currentLineLengthKm * ratio;
 
       try {
-        const pt = turf.along(currentCleanLineTurf, targetDistKm, { units: 'kilometers' });
-        if (pt && pt.geometry && pt.geometry.coordinates) {
-          if (!walkerMarker) {
-            const el = document.createElement('div');
-            el.className = 'route-marker marker-walker';
-            walkerMarker = new maplibregl.Marker({ element: el }).setLngLat(pt.geometry.coordinates).addTo(map);
-          } else {
-            walkerMarker.setLngLat(pt.geometry.coordinates);
-          }
-          const pct = Math.round(ratio * 100);
-          const curTimeStr = formatTimeMMSS(current);
-          const totTimeStr = formatTimeMMSS(duration);
-          document.getElementById('sync-status').innerText = `🏃 ${curTimeStr} / ${totTimeStr} (${pct}%)`;
-        }
+        updateWalkerMarkerPose(targetDistKm);
+        const pct = Math.round(ratio * 100);
+        const curTimeStr = formatTimeMMSS(current);
+        const totTimeStr = formatTimeMMSS(duration);
+        document.getElementById('sync-status').innerText = `🏃 ${curTimeStr} / ${totTimeStr} (${pct}%)`;
       } catch (e) {}
     }, 250);
   }
@@ -1028,19 +1081,8 @@
     eEl.innerText = 'E';
     endMarker = new maplibregl.Marker({ element: eEl }).setLngLat(endCoord).addTo(map);
 
-    let initialWalkerCoord = startCoord;
-    if (initialRatio > 0 && currentLineLengthKm > 0) {
-      try {
-        const pt = turf.along(currentCleanLineTurf, currentLineLengthKm * initialRatio, { units: 'kilometers' });
-        if (pt && pt.geometry && pt.geometry.coordinates) {
-          initialWalkerCoord = pt.geometry.coordinates;
-        }
-      } catch (e) {}
-    }
-
-    const wEl = document.createElement('div');
-    wEl.className = 'route-marker marker-walker';
-    walkerMarker = new maplibregl.Marker({ element: wEl }).setLngLat(initialWalkerCoord).addTo(map);
+    const initialDistKm = (initialRatio > 0 && currentLineLengthKm > 0) ? (currentLineLengthKm * initialRatio) : 0;
+    updateWalkerMarkerPose(initialDistKm);
 
     const totalM = Math.round(currentLineLengthKm * 1000);
     document.getElementById('sync-status').innerText = `🟢S➔🏁E (총 ${totalM}m)`;
@@ -1088,7 +1130,7 @@
             'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'
           ],
           tileSize: 256,
-          attribution: '&copy; OpenStreetMap contributors'
+          attribution: '© OpenStreetMap contributors'
         }
       },
       layers: [{
@@ -1120,7 +1162,7 @@
       return null;
     }
 
-    const text = String(value).trim().replace(/\\\//g, '/').replace(/&amp;/gi, '&');
+    const text = String(value).trim().replace(/\\\//g, '/').replace(/&/gi, '&');
     if (!text) return null;
     if (/^[A-Za-z0-9_-]{11}$/.test(text)) return text;
 
@@ -1461,10 +1503,10 @@
       const clickedPt = turf.point([lngLat.lng, lngLat.lat]);
       const snapped = turf.nearestPointOnLine(currentCleanLineTurf, clickedPt, { units: 'kilometers' });
       if (snapped && snapped.properties && typeof snapped.properties.location === 'number') {
-        const ratio = Math.min(1, Math.max(0, snapped.properties.location / currentLineLengthKm));
-        if (walkerMarker && snapped.geometry && snapped.geometry.coordinates) {
-          walkerMarker.setLngLat(snapped.geometry.coordinates);
-        }
+        const distKm = snapped.properties.location;
+        const ratio = Math.min(1, Math.max(0, distKm / currentLineLengthKm));
+        updateWalkerMarkerPose(distKm);
+
         if (playerReady && player && typeof player.getDuration === 'function') {
           const dur = player.getDuration();
           if (dur > 0) {
